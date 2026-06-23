@@ -1,20 +1,24 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { TaskCard } from '@/components/TaskCard';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
+import {
+  getTasksNeedingAttention,
+  getUnassignedTasks,
+} from '@/features/tasks/taskFilters';
 import { mockHousehold, mockTasks } from '@/mock';
 import { colors, spacing, typography } from '@/theme';
-import type { HouseholdMember } from '@/types';
+import type { HouseholdMember, Task } from '@/types';
 
 function isToday(isoString: string): boolean {
   const d   = new Date(isoString);
   const now = new Date();
   return (
     d.getFullYear() === now.getFullYear() &&
-    d.getMonth()    === now.getMonth() &&
+    d.getMonth()    === now.getMonth()    &&
     d.getDate()     === now.getDate()
   );
 }
@@ -27,19 +31,33 @@ function getMemberName(
   return members.find((m) => m.userId === userId)?.name;
 }
 
+function getTodayTasks(tasks: Task[]): Task[] {
+  const attention  = getTasksNeedingAttention(tasks);
+  const unassigned = getUnassignedTasks(tasks);
+  const dueToday   = tasks.filter(
+    (t) =>
+      t.status !== 'completed' &&
+      t.status !== 'needs_attention' &&
+      t.assigneeId !== undefined &&
+      t.dueAt !== undefined &&
+      isToday(t.dueAt),
+  );
+
+  const seen = new Set<string>();
+  const result: Task[] = [];
+  for (const task of [...attention, ...unassigned, ...dueToday]) {
+    if (!seen.has(task.id)) {
+      seen.add(task.id);
+      result.push(task);
+    }
+  }
+  return result;
+}
+
 export function TodayScreen() {
   const members = mockHousehold.members;
 
-  const todayTasks = useMemo(() => {
-    return mockTasks.filter((t) => {
-      if (t.status === 'completed') return false;
-      if (t.status === 'needs_attention') return true;
-      if (!t.assigneeId && t.status === 'open') return true;
-      if (t.dueAt && isToday(t.dueAt)) return true;
-      return false;
-    });
-  }, []);
-
+  const todayTasks = useMemo(() => getTodayTasks(mockTasks), []);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
 
   return (

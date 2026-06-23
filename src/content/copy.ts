@@ -23,7 +23,7 @@ export const copy = {
   },
   emptyStates: {
     today:         'Everything is clear for now.',
-    myTasks:       'No tasks right now — things are nicely organized.',
+    myTasks:       'Nothing on your plate right now — nicely done.',
     assigned:      'You have not assigned anything yet.',
     rewards:       'No rewards yet. You can add some when you are ready.',
     notifications: 'All quiet. Everything is up to date.',
@@ -31,6 +31,9 @@ export const copy = {
   today: {
     summary:          'Here are a few things that may need attention today.',
     unassignedBanner: 'Some family tasks are waiting for someone to take them.',
+  },
+  myTasks: {
+    summary: 'Here is everything currently on your plate.',
   },
   taskCard: {
     unassigned:     'Waiting for someone to take this',
