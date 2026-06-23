@@ -1,11 +1,17 @@
 import { create } from 'zustand';
-import type { AppState, AppUser, Household, Task } from '@/store/types';
+import type { AppUser, Household, Task } from '@/types';
+
+interface AppState {
+  user:      AppUser | null;
+  household: Household | null;
+  tasks:     Task[];
+}
 
 interface AppActions {
-  setUser:         (user: AppUser | null) => void;
-  setHousehold:    (household: Household | null) => void;
-  setTasks:        (tasks: Task[]) => void;
-  resetAppState:   () => void;
+  setUser:       (user: AppUser | null) => void;
+  setHousehold:  (household: Household | null) => void;
+  setTasks:      (tasks: Task[]) => void;
+  resetAppState: () => void;
 }
 
 type AppStore = AppState & AppActions;
