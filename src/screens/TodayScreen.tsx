@@ -5,13 +5,14 @@ import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
+import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
 } from '@/features/tasks/taskFilters';
-import { mockHousehold, mockTasks } from '@/mock';
+import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
-import type { HouseholdMember, Task } from '@/types';
+import type { Task } from '@/types';
 
 function isToday(isoString: string): boolean {
   const d   = new Date(isoString);
@@ -23,27 +24,19 @@ function isToday(isoString: string): boolean {
   );
 }
 
-function getMemberName(
-  members: HouseholdMember[],
-  userId: string | undefined,
-): string | undefined {
-  if (!userId) return undefined;
-  return members.find((m) => m.userId === userId)?.name;
-}
-
 function getTodayTasks(tasks: Task[]): Task[] {
   const attention  = getTasksNeedingAttention(tasks);
   const unassigned = getUnassignedTasks(tasks);
   const dueToday   = tasks.filter(
     (t) =>
-      t.status !== 'completed' &&
+      t.status !== 'completed'       &&
       t.status !== 'needs_attention' &&
-      t.assigneeId !== undefined &&
-      t.dueAt !== undefined &&
+      t.assigneeId !== undefined     &&
+      t.dueAt !== undefined          &&
       isToday(t.dueAt),
   );
 
-  const seen = new Set<string>();
+  const seen   = new Set<string>();
   const result: Task[] = [];
   for (const task of [...attention, ...unassigned, ...dueToday]) {
     if (!seen.has(task.id)) {
@@ -55,9 +48,10 @@ function getTodayTasks(tasks: Task[]): Task[] {
 }
 
 export function TodayScreen() {
-  const members = mockHousehold.members;
+  const tasks   = useAppStore((s) => s.tasks);
+  const members = useAppStore((s) => s.household?.members ?? []);
 
-  const todayTasks = useMemo(() => getTodayTasks(mockTasks), []);
+  const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
 
   return (
@@ -86,7 +80,7 @@ export function TodayScreen() {
             <TaskCard
               key={task.id}
               task={task}
-              assigneeName={getMemberName(members, task.assigneeId)}
+              assigneeName={getMemberNameByUserId(members, task.assigneeId)}
             />
           ))}
         </ScrollView>

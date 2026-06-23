@@ -6,15 +6,17 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { RewardCard } from '@/features/rewards/components/RewardCard';
-import { mockHousehold, mockPointsBalances, mockRewards } from '@/mock';
+import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
 
-// First balance used for progress context — extended by child selector in a future ticket
-const selectedBalance = mockPointsBalances[0];
-
 export function RewardsScreen() {
-  const members        = mockHousehold.members;
-  const activeRewards  = mockRewards.filter((r) => r.isActive);
+  const rewards        = useAppStore((s) => s.rewards);
+  const pointsBalances = useAppStore((s) => s.pointsBalances);
+  const members        = useAppStore((s) => s.household?.members ?? []);
+
+  const activeRewards   = rewards.filter((r) => r.isActive);
+  // First balance used for progress context — extended by child selector in a future ticket
+  const selectedBalance = pointsBalances[0];
 
   return (
     <Screen style={styles.screen}>
@@ -30,7 +32,7 @@ export function RewardsScreen() {
         {/* Points summary */}
         <Text style={styles.sectionLabel}>{copy.rewards.familyPoints}</Text>
         <View style={styles.pointsSection}>
-          {mockPointsBalances.map((pb) => {
+          {pointsBalances.map((pb) => {
             const name = getMemberNameByUserId(members, pb.userId);
             return (
               <View key={pb.userId} style={styles.pointsRow}>
@@ -46,7 +48,7 @@ export function RewardsScreen() {
         {/* Rewards list */}
         <Text style={styles.sectionLabel}>{copy.rewards.availableRewards}</Text>
 
-        {activeRewards.length === 0 ? (
+        {activeRewards.length === 0 || !selectedBalance ? (
           <EmptyState message={copy.rewards.noRewards} emoji="🎁" />
         ) : (
           activeRewards.map((reward) => (
@@ -73,8 +75,8 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     ...typography.caption,
-    color:        colors.textMuted,
-    fontWeight:   '600',
+    color:         colors.textMuted,
+    fontWeight:    '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginBottom:  spacing.sm,
@@ -89,9 +91,9 @@ const styles = StyleSheet.create({
     marginBottom:    spacing.md,
   },
   pointsRow: {
-    flexDirection:   'row',
-    justifyContent:  'space-between',
-    alignItems:      'center',
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
     paddingVertical:   spacing.sm,
     paddingHorizontal: spacing.lg,
   },

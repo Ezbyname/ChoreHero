@@ -5,25 +5,19 @@ import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
+import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
-import { mockCurrentUserId, mockHousehold, mockTasks } from '@/mock';
+import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
-import type { HouseholdMember } from '@/types';
-
-function getMemberName(
-  members: HouseholdMember[],
-  userId: string | undefined,
-): string | undefined {
-  if (!userId) return undefined;
-  return members.find((m) => m.userId === userId)?.name;
-}
 
 export function MyTasksScreen() {
-  const members  = mockHousehold.members;
+  const tasks   = useAppStore((s) => s.tasks);
+  const user    = useAppStore((s) => s.user);
+  const members = useAppStore((s) => s.household?.members ?? []);
 
   const myTasks = useMemo(
-    () => getTasksForUser(mockTasks, mockCurrentUserId),
-    [],
+    () => (user ? getTasksForUser(tasks, user.id) : []),
+    [tasks, user],
   );
 
   return (
@@ -46,7 +40,7 @@ export function MyTasksScreen() {
             <TaskCard
               key={task.id}
               task={task}
-              assigneeName={getMemberName(members, task.assigneeId)}
+              assigneeName={getMemberNameByUserId(members, task.assigneeId)}
             />
           ))}
         </ScrollView>

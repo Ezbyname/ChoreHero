@@ -1,12 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { RootNavigator } from './src/navigation/RootNavigator';
+import { AppBootstrap } from '@/bootstrap/AppBootstrap';
 
 export default function App() {
   return (
     <>
-      <StatusBar style="dark" />
-      <RootNavigator />
+      <StatusBar style="auto" />
+      <AppBootstrap />
     </>
   );
 }
