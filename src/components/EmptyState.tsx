@@ -1,14 +1,16 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors, spacing, typography } from '../theme';
 
 interface EmptyStateProps {
   message: string;
+  emoji?: string;
 }
 
-export function EmptyState({ message }: EmptyStateProps) {
+export function EmptyState({ message, emoji = '🌿' }: EmptyStateProps) {
   return (
     <View style={styles.container}>
-      <Text style={styles.emoji}>🌿</Text>
+      <Text style={styles.emoji}>{emoji}</Text>
       <Text style={styles.message}>{message}</Text>
     </View>
   );
@@ -16,19 +18,18 @@ export function EmptyState({ message }: EmptyStateProps) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 12,
+    flex:             1,
+    alignItems:       'center',
+    justifyContent:   'center',
+    paddingHorizontal: spacing.xxxl,
+    gap:              spacing.md,
   },
   emoji: {
     fontSize: 40,
   },
   message: {
-    fontSize: 16,
-    color: '#6B7280',
+    ...typography.body,
+    color:     colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
   },
 });
