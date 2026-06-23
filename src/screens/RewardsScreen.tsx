@@ -7,15 +7,21 @@ import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { RewardCard } from '@/features/rewards/components/RewardCard';
 import { useAppStore } from '@/store/useAppStore';
+import {
+  selectCurrentHousehold,
+  selectPointsBalances,
+  selectRewards,
+} from '@/store/selectors';
 import { colors, spacing, typography } from '@/theme';
 
 export function RewardsScreen() {
-  const rewards        = useAppStore((s) => s.rewards);
-  const pointsBalances = useAppStore((s) => s.pointsBalances);
-  const members        = useAppStore((s) => s.household?.members ?? []);
+  const rewards        = useAppStore(selectRewards);
+  const pointsBalances = useAppStore(selectPointsBalances);
+  const household      = useAppStore(selectCurrentHousehold);
+  const members        = household?.members ?? [];
 
   const activeRewards   = rewards.filter((r) => r.isActive);
-  // First balance used for progress context — extended by child selector in a future ticket
+  // First balance used for progress context — child selector added in a future ticket
   const selectedBalance = pointsBalances[0];
 
   return (
@@ -29,23 +35,20 @@ export function RewardsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
       >
-        {/* Points summary */}
         <Text style={styles.sectionLabel}>{copy.rewards.familyPoints}</Text>
         <View style={styles.pointsSection}>
-          {pointsBalances.map((pb) => {
-            const name = getMemberNameByUserId(members, pb.userId);
-            return (
-              <View key={pb.userId} style={styles.pointsRow}>
-                <Text style={styles.pointsName}>{name}</Text>
-                <Text style={styles.pointsValue}>
-                  {pb.balance} {copy.rewards.pointsLabel}
-                </Text>
-              </View>
-            );
-          })}
+          {pointsBalances.map((pb) => (
+            <View key={pb.userId} style={styles.pointsRow}>
+              <Text style={styles.pointsName}>
+                {getMemberNameByUserId(members, pb.userId)}
+              </Text>
+              <Text style={styles.pointsValue}>
+                {pb.balance} {copy.rewards.pointsLabel}
+              </Text>
+            </View>
+          ))}
         </View>
 
-        {/* Rewards list */}
         <Text style={styles.sectionLabel}>{copy.rewards.availableRewards}</Text>
 
         {activeRewards.length === 0 || !selectedBalance ? (

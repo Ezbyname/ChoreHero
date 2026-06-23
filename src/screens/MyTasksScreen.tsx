@@ -8,12 +8,18 @@ import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
+import {
+  selectCurrentHousehold,
+  selectCurrentUser,
+  selectTasks,
+} from '@/store/selectors';
 import { colors, spacing, typography } from '@/theme';
 
 export function MyTasksScreen() {
-  const tasks   = useAppStore((s) => s.tasks);
-  const user    = useAppStore((s) => s.user);
-  const members = useAppStore((s) => s.household?.members ?? []);
+  const tasks     = useAppStore(selectTasks);
+  const user      = useAppStore(selectCurrentUser);
+  const household = useAppStore(selectCurrentHousehold);
+  const members   = household?.members ?? [];
 
   const myTasks = useMemo(
     () => (user ? getTasksForUser(tasks, user.id) : []),

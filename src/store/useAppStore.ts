@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { mockSeed } from '@/mock';
 import type { AppUser, Household, PointsBalance, Reward, Task } from '@/types';
 
-interface AppState {
+export interface AppState {
   user:            AppUser | null;
   household:       Household | null;
   tasks:           Task[];
@@ -12,16 +12,16 @@ interface AppState {
 }
 
 interface AppActions {
-  setUser:              (user: AppUser | null) => void;
-  setHousehold:         (household: Household | null) => void;
-  setTasks:             (tasks: Task[]) => void;
-  setRewards:           (rewards: Reward[]) => void;
-  setPointsBalances:    (balances: PointsBalance[]) => void;
-  hydrateFromMockSeed:  () => void;
-  resetAppState:        () => void;
+  setUser:             (user: AppUser | null) => void;
+  setHousehold:        (household: Household | null) => void;
+  setTasks:            (tasks: Task[]) => void;
+  setRewards:          (rewards: Reward[]) => void;
+  setPointsBalances:   (balances: PointsBalance[]) => void;
+  hydrateFromMockSeed: () => void;
+  resetAppState:       () => void;
 }
 
-type AppStore = AppState & AppActions;
+export type AppStore = AppState & AppActions;
 
 const initialState: AppState = {
   user:           null,

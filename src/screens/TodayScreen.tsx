@@ -11,6 +11,10 @@ import {
   getUnassignedTasks,
 } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
+import {
+  selectCurrentHousehold,
+  selectTasks,
+} from '@/store/selectors';
 import { colors, spacing, typography } from '@/theme';
 import type { Task } from '@/types';
 
@@ -48,8 +52,9 @@ function getTodayTasks(tasks: Task[]): Task[] {
 }
 
 export function TodayScreen() {
-  const tasks   = useAppStore((s) => s.tasks);
-  const members = useAppStore((s) => s.household?.members ?? []);
+  const tasks     = useAppStore(selectTasks);
+  const household = useAppStore(selectCurrentHousehold);
+  const members   = household?.members ?? [];
 
   const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
