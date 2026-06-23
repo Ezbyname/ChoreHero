@@ -35,6 +35,16 @@ export const copy = {
   myTasks: {
     summary: 'Here is everything currently on your plate.',
   },
+  rewards: {
+    familyPoints:     'Family points',
+    availableRewards: 'Available rewards',
+    pointsLabel:      'points',
+    pointsNeeded:     '{n} points needed',
+    availableNow:     'Available now',
+    morePointsToGo:   '{n} more to go',
+    memberHasPoints:  '{name} has {n} points',
+    noRewards:        'No rewards yet. You can add some when you are ready.',
+  },
   taskCard: {
     unassigned:     'Waiting for someone to take this',
     needsAttention: 'Needs attention',
