@@ -1,32 +1,41 @@
 export const copy = {
   screens: {
     today: {
-      title: 'Today',
+      title:    'Today',
       subtitle: 'A calm look at what needs your attention today.',
     },
     myTasks: {
-      title: 'My Tasks',
+      title:    'My Tasks',
       subtitle: 'Things assigned to you, all in one gentle view.',
     },
     assigned: {
-      title: 'Assigned',
+      title:    'Assigned',
       subtitle: 'A simple way to follow up on tasks you shared.',
     },
     rewards: {
-      title: 'Rewards',
+      title:    'Rewards',
       subtitle: 'Points, rewards, and little wins.',
     },
     settings: {
-      title: 'Settings',
+      title:    'Settings',
       subtitle: 'Family, preferences, and app settings.',
     },
   },
   emptyStates: {
-    today: 'Everything is clear for now.',
-    myTasks: 'No tasks right now — things are nicely organized.',
-    assigned: 'You have not assigned anything yet.',
-    rewards: 'No rewards yet. You can add some when you are ready.',
+    today:         'Everything is clear for now.',
+    myTasks:       'No tasks right now — things are nicely organized.',
+    assigned:      'You have not assigned anything yet.',
+    rewards:       'No rewards yet. You can add some when you are ready.',
     notifications: 'All quiet. Everything is up to date.',
+  },
+  today: {
+    summary:          'Here are a few things that may need attention today.',
+    unassignedBanner: 'Some family tasks are waiting for someone to take them.',
+  },
+  taskCard: {
+    unassigned:     'Waiting for someone to take this',
+    needsAttention: 'Needs attention',
+    points:         'pts',
   },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',
