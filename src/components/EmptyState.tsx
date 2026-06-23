@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors, spacing, typography } from '../theme';
+import { colors, spacing, typography } from '@/theme';
 
 interface EmptyStateProps {
   message: string;
@@ -18,18 +18,18 @@ export function EmptyState({ message, emoji = '🌿' }: EmptyStateProps) {
 
 const styles = StyleSheet.create({
   container: {
-    flex:             1,
-    alignItems:       'center',
-    justifyContent:   'center',
-    paddingHorizontal: spacing.xxxl,
-    gap:              spacing.md,
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    paddingBottom:  spacing.xxxl,
   },
   emoji: {
-    fontSize: 40,
+    fontSize:     48,
+    marginBottom: spacing.md,
   },
   message: {
     ...typography.body,
-    color:     colors.textSecondary,
+    color:     colors.textMuted,
     textAlign: 'center',
   },
 });

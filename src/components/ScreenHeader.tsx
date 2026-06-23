@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors, spacing, typography } from '../theme';
+import { colors, spacing, typography } from '@/theme';
 
 interface ScreenHeaderProps {
   title: string;
@@ -11,23 +11,23 @@ export function ScreenHeader({ title, subtitle }: ScreenHeaderProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop:    spacing.xxl,
-    paddingBottom: spacing.lg,
+    paddingTop:    spacing.lg,
+    paddingBottom: spacing.md,
   },
   title: {
     ...typography.title,
-    color:        colors.textPrimary,
-    marginBottom: spacing.xs,
+    color: colors.textPrimary,
   },
   subtitle: {
     ...typography.subtitle,
-    color: colors.textSecondary,
+    color:     colors.textSecondary,
+    marginTop: spacing.xs,
   },
 });
