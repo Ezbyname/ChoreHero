@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
+import { AuthBootstrap } from '@/bootstrap/AuthBootstrap';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { useAppStore } from '@/store/useAppStore';
 
 export function AppBootstrap() {
-  const isMockHydrated    = useAppStore((s) => s.isMockHydrated);
+  const isMockHydrated      = useAppStore((s) => s.isMockHydrated);
   const hydrateFromMockSeed = useAppStore((s) => s.hydrateFromMockSeed);
 
   useEffect(() => {
@@ -12,5 +13,9 @@ export function AppBootstrap() {
     }
   }, []);
 
-  return <RootNavigator />;
+  return (
+    <AuthBootstrap>
+      <RootNavigator />
+    </AuthBootstrap>
+  );
 }

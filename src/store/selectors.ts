@@ -1,13 +1,26 @@
 import type { AppStore } from '@/store/useAppStore';
 
-// Raw state selectors
-export const selectCurrentUser     = (s: AppStore) => s.user;
-export const selectCurrentHousehold= (s: AppStore) => s.household;
-export const selectTasks           = (s: AppStore) => s.tasks;
-export const selectRewards         = (s: AppStore) => s.rewards;
-export const selectPointsBalances  = (s: AppStore) => s.pointsBalances;
-export const selectIsMockHydrated  = (s: AppStore) => s.isMockHydrated;
+// ── App data selectors ────────────────────────────────────────────────────────
 
-// Lightweight UI/Auth convenience selectors
-export const selectIsAuthenticated  = (s: AppStore): boolean => Boolean(s.user);
-export const selectCurrentUserName  = (s: AppStore): string | null => s.user?.name ?? null;
+export const selectCurrentUser      = (s: AppStore) => s.user;
+export const selectCurrentHousehold = (s: AppStore) => s.household;
+export const selectTasks            = (s: AppStore) => s.tasks;
+export const selectRewards          = (s: AppStore) => s.rewards;
+export const selectPointsBalances   = (s: AppStore) => s.pointsBalances;
+export const selectIsMockHydrated   = (s: AppStore) => s.isMockHydrated;
+
+export const selectCurrentUserName = (s: AppStore): string | null =>
+  s.user?.name ?? null;
+
+// ── Auth selectors ────────────────────────────────────────────────────────────
+
+export const selectAuthSession    = (s: AppStore) => s.authSession;
+export const selectAuthUser       = (s: AppStore) => s.authUser;
+export const selectIsAuthResolved = (s: AppStore) => s.isAuthResolved;
+export const selectIsAuthLoading  = (s: AppStore) => s.isAuthLoading;
+export const selectAuthError      = (s: AppStore) => s.authError;
+
+// True once Supabase auth identity is confirmed (signed in or signed out).
+// Gates AuthGate in T1.3.3. Derived from authUser, not legacy `user`.
+export const selectIsAuthenticated = (s: AppStore): boolean =>
+  Boolean(s.authUser);
