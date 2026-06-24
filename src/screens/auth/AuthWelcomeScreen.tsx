@@ -19,11 +19,19 @@ export function AuthWelcomeScreen() {
         <Text style={styles.body}>{copy.auth.welcomeBody}</Text>
 
         <TouchableOpacity
-          style={styles.button}
+          style={styles.primaryButton}
+          onPress={() => navigation.navigate('Signup')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.primaryButtonText}>{copy.auth.createAccount}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryButton}
           onPress={() => navigation.navigate('Login')}
           activeOpacity={0.8}
         >
-          <Text style={styles.buttonText}>{copy.auth.signInButton}</Text>
+          <Text style={styles.secondaryButtonText}>{copy.auth.signInButton}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -41,6 +49,7 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     maxWidth:   320,
+    width:      '100%',
   },
   title: {
     ...typography.heading,
@@ -60,16 +69,30 @@ const styles = StyleSheet.create({
     textAlign:    'center',
     marginBottom: spacing.xxxl,
   },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius:    12,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xxxl,
-    alignItems:      'center',
+  primaryButton: {
+    backgroundColor:   colors.primary,
+    borderRadius:      12,
+    paddingVertical:   spacing.md,
+    alignItems:        'center',
+    width:             '100%',
+    marginBottom:      spacing.sm,
   },
-  buttonText: {
+  primaryButtonText: {
     ...typography.body,
     color:      colors.surface,
     fontWeight: '600',
+  },
+  secondaryButton: {
+    borderWidth:     1,
+    borderColor:     colors.borderSoft,
+    borderRadius:    12,
+    paddingVertical: spacing.md,
+    alignItems:      'center',
+    width:           '100%',
+  },
+  secondaryButtonText: {
+    ...typography.body,
+    color:      colors.textSecondary,
+    fontWeight: '500',
   },
 });

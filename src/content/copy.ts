@@ -51,19 +51,48 @@ export const copy = {
     points:         'pts',
   },
   auth: {
+    // Welcome screen
     welcomeTitle:    'Welcome to ChoreHero',
-    welcomeSubtitle: 'Sign in is almost ready. We are setting up the safe foundation first.',
+    welcomeSubtitle: 'A calmer way to share family tasks.',
     welcomeBody:     'Your family tasks and rewards will appear here after sign in.',
-    loginTitle:      'Sign in',
-    loginSubtitle:   'Welcome back to your family.',
-    emailLabel:      'Email',
-    emailPlaceholder: 'your@email.com',
-    passwordLabel:   'Password',
-    passwordPlaceholder: '••••••••',
+
+    // Login screen
+    loginTitle:    'Sign in',
+    loginSubtitle: 'Welcome back to your family.',
+
+    // Signup screen
+    signupTitle:    'Create your account',
+    signupSubtitle: 'Start setting up a calmer way to share family tasks.',
+
+    // Shared field labels
+    emailLabel:           'Email',
+    emailPlaceholder:     'your@email.com',
+    passwordLabel:        'Password',
+    passwordPlaceholder:  '••••••••',
+    confirmPasswordLabel: 'Confirm password',
+
+    // Buttons / loading states
     signInButton:    'Sign in',
     signingIn:       'Signing in…',
-    loginError:      'We could not sign you in. Please check your email and password.',
+    createAccount:   'Create account',
+    creatingAccount: 'Creating account…',
+    backToSignIn:    'Back to Sign in',
+
+    // Cross-screen navigation links
+    loginToSignup: 'New to ChoreHero? Create an account',
+    signupToLogin: 'Already have an account? Sign in',
+
+    // Validation errors
     emptyFieldsError: 'Please enter your email and password.',
+    passwordMismatch: 'The passwords do not match yet.',
+
+    // Auth errors (normalized — never show raw Supabase messages)
+    loginError:  'We could not sign you in. Please check your email and password.',
+    signupError: 'We could not create the account. Please check the details and try again.',
+
+    // Signup email-confirmation success state
+    signupCheckEmailTitle: 'Check your email',
+    signupCheckEmail:      'We sent you a link to finish creating your account.',
   },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',

@@ -12,38 +12,50 @@ import {
 } from 'react-native';
 import { copy } from '@/content/copy';
 import type { AuthStackParamList } from '@/navigation/types';
-import { signInWithEmail } from '@/services/supabase/auth';
+import { signUpWithEmail } from '@/services/supabase/auth';
 import { colors, spacing, typography } from '@/theme';
 
-type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+type Nav = NativeStackNavigationProp<AuthStackParamList, 'Signup'>;
 
 /**
- * Login Screen MVP.
+ * Signup Screen MVP.
  *
- * After a successful sign-in, this screen does nothing.
- * AuthBootstrap's onAuthStateChange fires → Zustand is updated → AuthGate
- * switches to RootNavigator automatically.
+ * Creates a Supabase Auth identity only — no profile, no household, no onboarding.
+ *
+ * After a successful signup:
+ *   - If Supabase returns a session: AuthBootstrap listener fires → Zustand updates
+ *     → AuthGate switches to RootNavigator. This screen does nothing.
+ *   - If Supabase requires email confirmation (no session): show dedicated
+ *     "Check your email" success state. Do not navigate imperatively.
  *
  * This screen must not:
  *   - write auth state to Zustand
- *   - navigate imperatively after sign-in
- *   - call Supabase directly
+ *   - navigate to RootNavigator after signup
+ *   - call Supabase directly (uses signUpWithEmail wrapper)
+ *   - create profiles, households, or app user mappings
  */
-export function LoginScreen() {
+export function SignupScreen() {
   const navigation = useNavigation<Nav>();
 
-  const [email,        setEmail]        = useState('');
-  const [password,     setPassword]     = useState('');
-  const [localError,   setLocalError]   = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [email,           setEmail]           = useState('');
+  const [password,        setPassword]        = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting,    setIsSubmitting]    = useState(false);
+  const [localError,      setLocalError]      = useState<string | null>(null);
+  const [showSuccess,     setShowSuccess]     = useState(false);
 
-  async function handleSignIn() {
+  async function handleCreateAccount() {
     if (isSubmitting) return;
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmail || !password || !confirmPassword) {
       setLocalError(copy.auth.emptyFieldsError);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setLocalError(copy.auth.passwordMismatch);
       return;
     }
 
@@ -51,18 +63,49 @@ export function LoginScreen() {
     setIsSubmitting(true);
 
     try {
-      const { error } = await signInWithEmail(normalizedEmail, password);
+      const { data, error } = await signUpWithEmail(normalizedEmail, password);
+
       if (error) {
-        setLocalError(copy.auth.loginError);
+        setLocalError(copy.auth.signupError);
+        return;
       }
-      // On success: no action needed here.
-      // AuthBootstrap listener fires → Zustand updates → AuthGate re-renders.
+
+      if (!data.session) {
+        // Supabase requires email confirmation — no session yet.
+        setShowSuccess(true);
+      }
+      // If data.session exists, AuthBootstrap fires and AuthGate handles transition.
     } catch {
-      setLocalError(copy.auth.loginError);
+      setLocalError(copy.auth.signupError);
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  // ── Email confirmation success state ────────────────────────────────────────
+
+  if (showSuccess) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.successContent}>
+          <Text style={styles.title}>{copy.auth.signupCheckEmailTitle}</Text>
+          <Text style={styles.subtitle}>{copy.auth.signupCheckEmail}</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('Login')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>{copy.auth.backToSignIn}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Signup form ─────────────────────────────────────────────────────────────
+
+  const isButtonDisabled =
+    isSubmitting || !email.trim() || !password || !confirmPassword;
 
   return (
     <KeyboardAvoidingView
@@ -71,8 +114,8 @@ export function LoginScreen() {
     >
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>{copy.auth.loginTitle}</Text>
-          <Text style={styles.subtitle}>{copy.auth.loginSubtitle}</Text>
+          <Text style={styles.title}>{copy.auth.signupTitle}</Text>
+          <Text style={styles.subtitle}>{copy.auth.signupSubtitle}</Text>
         </View>
 
         <View style={styles.form}>
@@ -88,6 +131,7 @@ export function LoginScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
+              textContentType="emailAddress"
               editable={!isSubmitting}
             />
           </View>
@@ -103,7 +147,23 @@ export function LoginScreen() {
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="current-password"
+              textContentType="newPassword"
+              editable={!isSubmitting}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>{copy.auth.confirmPasswordLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder={copy.auth.passwordPlaceholder}
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="newPassword"
               editable={!isSubmitting}
             />
           </View>
@@ -115,22 +175,22 @@ export function LoginScreen() {
           ) : null}
 
           <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
-            onPress={handleSignIn}
-            disabled={isSubmitting}
+            style={[styles.button, isButtonDisabled && styles.buttonDisabled]}
+            onPress={handleCreateAccount}
+            disabled={isButtonDisabled}
             activeOpacity={0.8}
           >
             <Text style={styles.buttonText}>
-              {isSubmitting ? copy.auth.signingIn : copy.auth.signInButton}
+              {isSubmitting ? copy.auth.creatingAccount : copy.auth.createAccount}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkRow}
-            onPress={() => navigation.navigate('Signup')}
+            onPress={() => navigation.navigate('Login')}
             disabled={isSubmitting}
           >
-            <Text style={styles.linkText}>{copy.auth.loginToSignup}</Text>
+            <Text style={styles.linkText}>{copy.auth.signupToLogin}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -147,6 +207,14 @@ const styles = StyleSheet.create({
     flex:              1,
     paddingHorizontal: spacing.xl,
     justifyContent:    'center',
+  },
+  successContent: {
+    flex:              1,
+    paddingHorizontal: spacing.xl,
+    alignItems:        'center',
+    justifyContent:    'center',
+    maxWidth:          320,
+    alignSelf:         'center',
   },
   header: {
     marginBottom: spacing.xxxl,
@@ -209,7 +277,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   linkRow: {
-    alignItems:      'center',
+    alignItems: 'center',
     paddingVertical: spacing.sm,
   },
   linkText: {
