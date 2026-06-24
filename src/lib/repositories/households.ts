@@ -32,22 +32,30 @@ export async function getHouseholdsForProfile(
 ): Promise<RepositoryResult<HouseholdRow[]>> {
   if (!supabase) return { data: null, error: notConfiguredError() };
 
-  // Step 1: resolve household IDs for this profile
+  // Step 1: resolve household IDs for this profile, ordered by join time.
+  // Determinism rule: joined_at ASC, id ASC — ensures stable active-household
+  // selection when no default_household_id is set on the profile.
   const { data: memberRows, error: memberError } = await supabase
     .from('household_members')
     .select('*')
-    .eq('profile_id', profileId);
+    .eq('profile_id', profileId)
+    .order('joined_at', { ascending: true })
+    .order('id',        { ascending: true });
 
   if (memberError) return { data: null, error: memberError };
   if (!memberRows || memberRows.length === 0) return { data: [], error: null };
 
+  // Preserve join-time order for active-household resolution.
   const householdIds = memberRows.map((m) => m.household_id);
 
-  // Step 2: fetch those households
+  // Step 2: fetch those households, ordered by created_at ASC, id ASC so the
+  // array position is deterministic regardless of DB storage order.
   const { data, error } = await supabase
     .from('households')
     .select('*')
-    .in('id', householdIds);
+    .in('id', householdIds)
+    .order('created_at', { ascending: true })
+    .order('id',         { ascending: true });
 
   if (error) return { data: null, error };
   return { data: data ?? [], error: null };

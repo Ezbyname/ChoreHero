@@ -24,6 +24,24 @@ export const selectAuthUserEmail = (s: AppStore): string | null =>
   s.authUser?.email ?? null;
 
 // True once Supabase auth identity is confirmed (signed in or signed out).
-// Gates AuthGate in T1.3.3. Derived from authUser, not legacy `user`.
 export const selectIsAuthenticated = (s: AppStore): boolean =>
   Boolean(s.authUser);
+
+// ── Hydration selectors ───────────────────────────────────────────────────────
+
+export const selectAppHydrationState     = (s: AppStore) => s.appHydrationState;
+export const selectIsAppDataReady        = (s: AppStore) => s.isAppDataReady;
+export const selectIsAppDataLoading      = (s: AppStore) => s.isAppDataLoading;
+export const selectAppDataError          = (s: AppStore) => s.appDataError;
+export const selectActiveHouseholdId     = (s: AppStore) => s.activeHouseholdId;
+export const selectHasNoHousehold        = (s: AppStore) => s.hasNoHousehold;
+export const selectAppDataVersion        = (s: AppStore) => s.appDataVersion;
+export const selectHydratedForAuthUserId = (s: AppStore) => s.hydratedForAuthUserId;
+export const selectHydrationRunId        = (s: AppStore) => s.hydrationRunId;
+export const selectHydrationSequence     = (s: AppStore) => s.hydrationSequence;
+
+// True if the store holds hydrated data for the currently authenticated user.
+export const selectIsHydratedForCurrentUser = (s: AppStore): boolean =>
+  Boolean(s.authUser) &&
+  s.hydratedForAuthUserId === s.authUser?.id &&
+  (s.appHydrationState === 'hydrated' || s.appHydrationState === 'partial');
