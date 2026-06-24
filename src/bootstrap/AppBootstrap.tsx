@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { AuthBootstrap } from '@/bootstrap/AuthBootstrap';
-import { RootNavigator } from '@/navigation/RootNavigator';
+import { AuthGate } from '@/navigation/AuthGate';
 import { useAppStore } from '@/store/useAppStore';
 
 export function AppBootstrap() {
@@ -15,7 +15,7 @@ export function AppBootstrap() {
 
   return (
     <AuthBootstrap>
-      <RootNavigator />
+      <AuthGate />
     </AuthBootstrap>
   );
 }

@@ -1,7 +1,11 @@
 export type RootTabParamList = {
-  Today: undefined;
-  MyTasks: undefined;
+  Today:    undefined;
+  MyTasks:  undefined;
   Assigned: undefined;
-  Rewards: undefined;
+  Rewards:  undefined;
   Settings: undefined;
+};
+
+export type AuthStackParamList = {
+  AuthWelcome: undefined;
 };
