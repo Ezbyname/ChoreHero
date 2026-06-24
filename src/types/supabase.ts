@@ -101,6 +101,7 @@ export interface Database {
           default_household_id?: string | null;
           updated_at?:           string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // households
@@ -125,6 +126,7 @@ export interface Database {
           name?:       string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // household_members
@@ -156,6 +158,7 @@ export interface Database {
           display_name_override?: string | null;
           updated_at?:            string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // tasks
@@ -209,6 +212,7 @@ export interface Database {
           completed_by_profile_id?:   string | null;
           updated_at?:                string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // rewards
@@ -244,6 +248,7 @@ export interface Database {
           status?:          RewardStatus;
           updated_at?:      string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // points_balances
@@ -268,6 +273,7 @@ export interface Database {
           updated_at?:  string;
         };
         Update: never;
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // point_transactions
@@ -301,6 +307,7 @@ export interface Database {
           created_at?:            string;
         };
         Update: never;
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // service_requests
@@ -354,6 +361,7 @@ export interface Database {
           converted_at?:             string | null;
           updated_at?:               string;
         };
+        Relationships: [];
       };
       // ----------------------------------------------------------
       // task_help_requests
@@ -405,10 +413,12 @@ export interface Database {
           cancelled_at?:               string | null;
           updated_at?:                 string;
         };
+        Relationships: [];
       };
     };
-    Views:     Record<string, never>;
-    Functions: Record<string, never>;
+    Views:          Record<string, never>;
+    Functions:      Record<string, never>;
+    CompositeTypes: Record<string, never>;
     Enums: {
       household_member_role:    HouseholdMemberRole;
       task_status:              TaskStatus;
