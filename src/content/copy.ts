@@ -93,6 +93,13 @@ export const copy = {
     // Signup email-confirmation success state
     signupCheckEmailTitle: 'Check your email',
     signupCheckEmail:      'We sent you a link to finish creating your account.',
+
+    // Settings / logout
+    account:     'Account',
+    signedInAs:  'Signed in as',
+    signOut:     'Sign out',
+    signingOut:  'Signing out…',
+    logoutError: 'We could not sign you out. Please try again.',
   },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',
