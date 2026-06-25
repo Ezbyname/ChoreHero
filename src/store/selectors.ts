@@ -1,4 +1,5 @@
 import type { AppStore } from '@/store/useAppStore';
+import { hasHouseholdPermission } from '@/domain/permissions';
 
 // ── App data selectors ────────────────────────────────────────────────────────
 
@@ -71,3 +72,68 @@ export const selectActiveHouseholdName = (s: AppStore): string | null =>
 // 'partial' state = profile exists but no household; not considered "active".
 export const selectHasActiveHousehold = (s: AppStore): boolean =>
   s.appHydrationState === 'hydrated' && selectActiveHousehold(s) !== null;
+
+// ── Role & permission selectors (T1.6.1) ─────────────────────────────────────
+//
+// Screens and components must use these selectors instead of comparing roles directly.
+// Role reasoning lives in src/domain/permissions.ts — not in UI code.
+//
+// Ownership chain:
+//   Hydration → s.household.members (HouseholdMember[])
+//   selectCurrentMemberRole → domain helper
+//   selectCan* → UI consumption
+//
+// s.household.members is the correct access path.
+// There is no top-level s.householdMembers field in the store.
+
+// Returns the current user's role in the active household, or null if unavailable.
+// null covers: not hydrated, no household, user not a member, user not found.
+export const selectCurrentMemberRole = (s: AppStore): string | null => {
+  const userId = s.user?.id ?? null;
+  if (!userId || !s.household) return null;
+  const member = s.household.members.find((m) => m.userId === userId);
+  return member?.role ?? null;
+};
+
+// ── Permission selectors ──────────────────────────────────────────────────────
+//
+// Each selector delegates to hasHouseholdPermission from the domain layer.
+// Deny-by-default: returns false when role is null, undefined, or unknown.
+// Screens must use these — no direct role comparisons in UI code.
+
+// Household management
+export const selectCanManageHousehold = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'household.manage');
+
+export const selectCanInviteMembers = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'household.invite');
+
+export const selectCanManageMembers = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'members.manage');
+
+// Tasks
+export const selectCanCreateTasks = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'tasks.create');
+
+export const selectCanAssignTasks = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'tasks.assign');
+
+// Rewards
+export const selectCanCreateRewards = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.create');
+
+export const selectCanApproveRequests = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'requests.approve');
+
+// Contributions (vocabulary for T1.7.x — no contribution runtime flow in T1.6.1)
+export const selectCanCreateContribution = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.create_completed');
+
+export const selectCanClaimContribution = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.claim_completed');
+
+export const selectCanApproveContributionClaim = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.approve_claim');
+
+export const selectCanRejectContributionClaim = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.reject_claim');
