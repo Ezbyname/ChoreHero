@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { HouseholdSetupScreen } from '@/screens/HouseholdSetupScreen';
 import { ProfileSetupScreen } from '@/screens/ProfileSetupScreen';
 import {
   selectAppHydrationState,
@@ -20,7 +21,7 @@ import { copy } from '@/content/copy';
  *   1. loading                      → calm loading screen
  *   2. error + missing_profile      → ProfileSetupScreen (recovery UX)
  *   3. error (generic load failure) → friendly error placeholder
- *   4. partial (no household)       → no-household placeholder
+ *   4. partial (no household)       → HouseholdSetupScreen (recovery UX)
  *   5. hydrated                     → RootNavigator
  *
  * AuthGate decides: mock/dev vs unauthenticated vs authenticated.
@@ -58,16 +59,9 @@ export function AuthenticatedAppGate() {
     );
   }
 
-  // 4. No household membership yet (partial state)
+  // 4. Profile exists but no household membership yet → recovery UX
   if (appHydrationState === 'partial') {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.placeholderTitle}>You are not in a household yet.</Text>
-        <Text style={styles.placeholderBody}>
-          Ask a family member to invite you, or create a new household.
-        </Text>
-      </View>
-    );
+    return <HouseholdSetupScreen />;
   }
 
   // 5. Fully hydrated
@@ -88,17 +82,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    ...typography.body,
-    color:     colors.textSecondary,
-    textAlign: 'center',
-  },
-  placeholderTitle: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    textAlign:    'center',
-    marginBottom: spacing.sm,
-  },
-  placeholderBody: {
     ...typography.body,
     color:     colors.textSecondary,
     textAlign: 'center',

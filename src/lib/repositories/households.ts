@@ -91,3 +91,52 @@ export async function getHouseholdMember(
   if (error) return { data: null, error };
   return { data, error: null };
 }
+
+// Creates a new household and registers the creator as the owner member.
+//
+// Not idempotent: each call inserts a new household row with a new id.
+// Duplicate-submit protection lives at the screen level (isSubmitting guard)
+// and is the primary safeguard against duplicate households.
+//
+// Atomicity: two sequential inserts (no client-side transaction API).
+// If the member insert fails after the household insert succeeds, an orphaned
+// household row may remain. This is acceptable for MVP; atomic creation via
+// a server-side RPC can replace this in a future iteration.
+//
+// Invariants enforced here:
+//   - household.created_by_profile_id === ownerProfileId
+//   - member.role === 'owner'
+//   - no other households or members are created
+export async function createHouseholdWithOwner(input: {
+  name:           string;
+  ownerProfileId: string;
+}): Promise<RepositoryResult<{ household: HouseholdRow; member: HouseholdMemberRow }>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  // Step 1: insert the household row.
+  const { data: household, error: householdError } = await supabase
+    .from('households')
+    .insert({
+      name:                  input.name,
+      created_by_profile_id: input.ownerProfileId,
+    })
+    .select('*')
+    .single();
+
+  if (householdError) return { data: null, error: householdError };
+
+  // Step 2: register the creator as the owner member.
+  const { data: member, error: memberError } = await supabase
+    .from('household_members')
+    .insert({
+      household_id: household.id,
+      profile_id:   input.ownerProfileId,
+      role:         'owner',
+    })
+    .select('*')
+    .single();
+
+  if (memberError) return { data: null, error: memberError };
+
+  return { data: { household, member }, error: null };
+}

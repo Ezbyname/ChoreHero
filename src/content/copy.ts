@@ -111,6 +111,16 @@ export const copy = {
     validationEmpty:  'Please enter a display name.',
     error:            'We couldn\'t create your profile. Please try again.',
   },
+  householdSetup: {
+    title:            'Create your family household',
+    body:             'Give your household a name. Your family members can join after.',
+    fieldLabel:       'Household name',
+    fieldPlaceholder: 'Our family',
+    button:           'Create household',
+    buttonLoading:    'Creating your household…',
+    validationEmpty:  'Please enter a household name.',
+    error:            'We couldn\'t create your household. Please try again.',
+  },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',
     network: 'Connection seems a little shaky. Check your internet and try again.',
