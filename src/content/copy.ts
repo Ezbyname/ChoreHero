@@ -121,6 +121,23 @@ export const copy = {
     validationEmpty:  'Please enter a household name.',
     error:            'We couldn\'t create your household. Please try again.',
   },
+  householdJoin: {
+    // Toggle labels shown on the no-household screen
+    tabCreate:        'Create a household',
+    tabJoin:          'Join a household',
+
+    // Join form
+    title:            'Join a family space',
+    body:             'Enter the code shared by your household organizer.',
+    fieldLabel:       'Household code',
+    fieldPlaceholder: 'Paste code here',
+    button:           'Join household',
+    buttonLoading:    'Joining your family space…',
+    validationEmpty:  'Please enter a household code.',
+    // Shown for not-found, RLS failure, or any controlled join error.
+    // Raw Supabase/SQL messages are never shown.
+    error:            'We couldn\'t join that household. Please check the code and try again.',
+  },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',
     network: 'Connection seems a little shaky. Check your internet and try again.',

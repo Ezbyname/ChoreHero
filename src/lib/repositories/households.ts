@@ -2,6 +2,19 @@ import { supabase } from '@/lib/supabase';
 import type { HouseholdRow, HouseholdMemberRow } from '@/types/supabase';
 import { notConfiguredError } from './types';
 import type { RepositoryResult } from './types';
+import type { PostgrestError } from '@supabase/supabase-js';
+
+// Shaped as PostgrestError so callers handle it uniformly via result.error.
+// 'PGRST_NOT_FOUND' is a sentinel code; RLS failure uses 'PGRST_RLS_NOT_FOUND'.
+// The screen must never show result.error.message — use copy strings only.
+function householdNotFoundError(): PostgrestError {
+  return {
+    message: 'Household not found.',
+    details: '',
+    hint:    '',
+    code:    'PGRST_NOT_FOUND',
+  } as PostgrestError;
+}
 
 // Note on select('*'):
 // Supabase's typed client resolves column types from string *literals*.
@@ -139,4 +152,67 @@ export async function createHouseholdWithOwner(input: {
   if (memberError) return { data: null, error: memberError };
 
   return { data: { household, member }, error: null };
+}
+
+// Joins an existing household as a regular member (role: 'adult').
+//
+// Join identifier: household.id is used as the temporary join code.
+// No invite_code or join_code column exists in the schema (T1.4.4).
+// This is intentional foundation behavior — a dedicated invite system is
+// a follow-up ticket. Copy uses neutral "Household code" to avoid exposing
+// the implementation detail in the UI.
+//
+// Idempotency: checks for an existing membership before inserting.
+// If the profile is already a member (any role), the existing row is
+// returned as success. This prevents duplicate-key errors and allows
+// safe retry without confusing the user.
+//
+// Role assignment: 'adult' — the lowest normal member role in the schema.
+// Roles: owner > admin > adult > child. Joining users are adults by default.
+//
+// Does not create households, owner memberships, tasks, or rewards.
+// Does not write app data into Zustand — caller must use requestAppDataHydrationRetry.
+export async function joinHouseholdById(input: {
+  householdId: string;
+  profileId:   string;
+}): Promise<RepositoryResult<HouseholdMemberRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  // Step 1: verify the household exists. Returns controlled error if not found
+  // so the screen can show friendly copy rather than a constraint violation.
+  const { data: household, error: lookupError } = await supabase
+    .from('households')
+    .select('id')
+    .eq('id', input.householdId)
+    .maybeSingle();
+
+  if (lookupError) return { data: null, error: lookupError };
+  if (!household)  return { data: null, error: householdNotFoundError() };
+
+  // Step 2: check for existing membership — idempotency guard.
+  // If already a member (any role), return existing row as success.
+  // Preserves existing role; does not overwrite owner/admin with 'adult'.
+  const { data: existing, error: existingError } = await supabase
+    .from('household_members')
+    .select('*')
+    .eq('household_id', input.householdId)
+    .eq('profile_id',   input.profileId)
+    .maybeSingle();
+
+  if (existingError) return { data: null, error: existingError };
+  if (existing)      return { data: existing, error: null };
+
+  // Step 3: insert new membership with role 'adult' (lowest normal member role).
+  const { data: member, error: memberError } = await supabase
+    .from('household_members')
+    .insert({
+      household_id: input.householdId,
+      profile_id:   input.profileId,
+      role:         'adult',
+    })
+    .select('*')
+    .single();
+
+  if (memberError) return { data: null, error: memberError };
+  return { data: member, error: null };
 }
