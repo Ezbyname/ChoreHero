@@ -10,6 +10,14 @@ import {
   assertPartialHydrationContext,
 } from '@/guards/hydrationInvariants';
 
+// ── Error code ────────────────────────────────────────────────────────────────
+//
+// missing_profile — auth user exists but no ChoreHero profile row found.
+//                   Surfaces as ProfileSetupScreen recovery UX.
+// load_failed     — any other hydration phase failure (network, RLS, DB error).
+//                   Surfaces as generic friendly error screen.
+export type AppDataErrorCode = 'missing_profile' | 'load_failed' | null;
+
 // ============================================================
 // STATE
 // ============================================================
@@ -35,6 +43,7 @@ export interface AppState {
   isAppDataReady:        boolean;
   isAppDataLoading:      boolean;
   appDataError:          string | null;
+  appDataErrorCode:      AppDataErrorCode;
   activeHouseholdId:     string | null;
   hasNoHousehold:        boolean;
   appDataVersion:        number;
@@ -68,6 +77,7 @@ interface AppActions {
   startHydrationRun(input: { runId: string; sequence: number }): void;
   setAppHydrationState(state: AppHydrationState): void;
   setAppDataError(error: string | null): void;
+  setAppDataErrorCode(code: AppDataErrorCode): void;
   commitHydrationSnapshot(input: {
     context:  HydrationContext;
     runId:    string;
@@ -75,6 +85,11 @@ interface AppActions {
   }): void;
   clearAppData(): void;
   markAppHydrationAuthResolved(): void;
+
+  // Called by ProfileSetupScreen after successful profile creation.
+  // Resets hydration to idle so AppDataBootstrap re-runs the full pipeline
+  // for the same auth user. Does not touch auth state. Does not write app data.
+  requestAppDataHydrationRetry(): void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -101,6 +116,7 @@ const initialState: AppState = {
   isAppDataReady:        false,
   isAppDataLoading:      false,
   appDataError:          null,
+  appDataErrorCode:      null,
   activeHouseholdId:     null,
   hasNoHousehold:        false,
   appDataVersion:        0,
@@ -142,7 +158,7 @@ function mapTaskRow(t: TaskRow): Task {
     createdById: t.created_by_profile_id,
     householdId: t.household_id,
     dueAt:       t.due_at ?? undefined,
-    status:      t.status as Task['status'], // DB statuses are a subset of app TaskStatus
+    status:      t.status as Task['status'],
     points:      t.points,
     // priority: not in DB schema; omitted (field is optional)
   };
@@ -231,6 +247,7 @@ export const useAppStore = create<AppStore>((set) => ({
       appHydrationState: 'loading',
       isAppDataLoading:  true,
       appDataError:      null,
+      appDataErrorCode:  null,
     }),
 
   // When setting 'error', also clear loading so the UI is never stuck.
@@ -243,6 +260,9 @@ export const useAppStore = create<AppStore>((set) => ({
 
   setAppDataError: (error) =>
     set({ appDataError: error }),
+
+  setAppDataErrorCode: (code) =>
+    set({ appDataErrorCode: code }),
 
   // Single atomic commit for Supabase hydration snapshots.
   // This is the sole enforcement point for hydration snapshot validity.
@@ -274,6 +294,7 @@ export const useAppStore = create<AppStore>((set) => ({
           ...state,
           appHydrationState: 'error' as AppHydrationState,
           isAppDataLoading:  false,
+          appDataErrorCode:  'load_failed' as AppDataErrorCode,
           appDataError:
             err instanceof Error
               ? err.message
@@ -311,6 +332,7 @@ export const useAppStore = create<AppStore>((set) => ({
         isAppDataReady:        true,
         isAppDataLoading:      false,
         appDataError:          null,
+        appDataErrorCode:      null,
         hydratedForAuthUserId: context.profile.id,
         appDataVersion:        state.appDataVersion + 1,
       };
@@ -332,6 +354,7 @@ export const useAppStore = create<AppStore>((set) => ({
       isAppDataReady:        false,
       isAppDataLoading:      false,
       appDataError:          null,
+      appDataErrorCode:      null,
       hydratedForAuthUserId: null,
       hydrationRunId:        null,
       // hydrationSequence is NOT reset: it is monotonically increasing
@@ -346,4 +369,19 @@ export const useAppStore = create<AppStore>((set) => ({
       isAppDataLoading:  false,
       appHydrationState: state.appHydrationState === 'loading' ? 'idle' : state.appHydrationState,
     })),
+
+  // Called by ProfileSetupScreen after a profile is successfully created.
+  // Resets hydration to idle so AppDataBootstrap's useEffect re-triggers the
+  // existing pipeline for the same auth user. Auth state is not touched.
+  // hydratedForAuthUserId is cleared so shouldHydrate evaluates as true.
+  requestAppDataHydrationRetry: () =>
+    set({
+      appHydrationState:     'idle',
+      isAppDataReady:        false,
+      isAppDataLoading:      false,
+      appDataError:          null,
+      appDataErrorCode:      null,
+      hydratedForAuthUserId: null,
+      hydrationRunId:        null,
+    }),
 }));

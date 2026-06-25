@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { useAppStore } from '@/store/useAppStore';
-import { sortHouseholdCandidatesDeterministically } from '@/guards/hydrationInvariants';
 import {
   selectIsAuthResolved,
   selectIsAuthenticated,
@@ -17,6 +16,7 @@ import {
   getRewardsForHousehold,
   getPointsBalancesForHousehold,
 } from '@/lib/repositories';
+import { sortHouseholdCandidatesDeterministically } from '@/guards/hydrationInvariants';
 import type { HydrationContext } from '@/types/hydration';
 import type { HouseholdRow } from '@/types/supabase';
 
@@ -64,8 +64,12 @@ function resolveActiveHousehold(
  *   - Three-phase hydration: profile → structure → domain (parallel)
  *   - partial state = profile exists, no household membership
  *   - Domain failures result in error, never partial commit
+ *   - Missing profile → error with appDataErrorCode = 'missing_profile'
+ *   - All other failures → error with appDataErrorCode = 'load_failed'
  *
  * AppDataBootstrap is the sole caller of hydration store actions.
+ * requestAppDataHydrationRetry() resets state to idle so this bootstrap
+ * re-triggers the pipeline for the same auth user (used by ProfileSetupScreen).
  */
 export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const isAuthResolved  = useAppStore(selectIsAuthResolved);
@@ -77,6 +81,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const startHydrationRun         = useAppStore((s) => s.startHydrationRun);
   const setAppHydrationState      = useAppStore((s) => s.setAppHydrationState);
   const setAppDataError           = useAppStore((s) => s.setAppDataError);
+  const setAppDataErrorCode       = useAppStore((s) => s.setAppDataErrorCode);
   const commitHydrationSnapshot   = useAppStore((s) => s.commitHydrationSnapshot);
   const clearAppData              = useAppStore((s) => s.clearAppData);
   const markAppHydrationAuthResolved = useAppStore((s) => s.markAppHydrationAuthResolved);
@@ -92,39 +97,34 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
   useEffect(() => {
     if (!isAuthResolved) {
-      // Auth not yet resolved — nothing to do yet.
       return;
     }
 
     if (!isAuthenticated || !authUser) {
-      // Signed out (or never signed in).
       clearAppData();
       pendingHydrationRef.current = false;
       markAppHydrationAuthResolved();
       return;
     }
 
-    // Authenticated below this line.
-
     if (!canHydrateAppData) {
-      // Auth is ready but Supabase isn't configured (e.g. dev/mock mode).
-      // Record pending intent so we run hydration if Supabase becomes available.
       pendingHydrationRef.current = true;
       markAppHydrationAuthResolved();
       return;
     }
 
     // canHydrateAppData is true — evaluate whether to trigger a run.
-    const userChanged       = authUser.id !== hydratedForAuthUserId;
+    // 'idle' covers both initial state and post-retry state set by
+    // requestAppDataHydrationRetry (called after ProfileSetupScreen succeeds).
+    const userChanged        = authUser.id !== hydratedForAuthUserId;
     const notHydratedForUser = appHydrationState === 'idle' || appHydrationState === 'error';
-    const shouldHydrate     =
+    const shouldHydrate      =
       pendingHydrationRef.current || userChanged || notHydratedForUser;
 
     if (!shouldHydrate) {
       return;
     }
 
-    // Clear pending intent before starting.
     pendingHydrationRef.current = false;
 
     const runId    = createHydrationRunId();
@@ -137,19 +137,16 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       try {
         await hydrateForUser({ userId: authUser.id, runId, sequence });
       } catch {
-        // Unexpected error escaped the hydration pipeline (network failure, etc.).
-        // Only commit the error if this run is still current.
-        if (
-          hydrationSequenceRef.current === sequence
-        ) {
+        if (hydrationSequenceRef.current === sequence) {
           setAppHydrationState('error');
+          setAppDataErrorCode('load_failed');
           setAppDataError('An unexpected error occurred. Please try again.');
         }
       }
     };
 
     run();
-  }, [isAuthResolved, isAuthenticated, authUser?.id, canHydrateAppData]);
+  }, [isAuthResolved, isAuthenticated, authUser?.id, canHydrateAppData, appHydrationState]);
 
   // ── Three-phase hydration ─────────────────────────────────────────────────
 
@@ -163,7 +160,6 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     sequence: number;
   }): Promise<void> {
 
-    // Helper: check if this run has been superseded.
     const isStale = () => hydrationSequenceRef.current !== sequence;
 
     // ── Phase 1: Profile ──────────────────────────────────────────────────
@@ -172,14 +168,23 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     if (isStale()) return;
 
-    if (profileResult.error || !profileResult.data) {
+    if (profileResult.error) {
       setAppHydrationState('error');
-      setAppDataError(
-        profileResult.error?.message ?? 'Profile not found. Please sign out and sign in again.',
-      );
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your profile. Please try again.');
       return;
     }
 
+    if (!profileResult.data) {
+      // maybeSingle() returned null with no error — profile row does not exist.
+      // Valid state for a new auth user. Surface as recovery UX (not a generic error).
+      setAppHydrationState('error');
+      setAppDataErrorCode('missing_profile');
+      setAppDataError('No ChoreHero profile found. Let\'s set one up.');
+      return;
+    }
+
+    // profileResult.data is narrowed to ProfileRow (non-null) below this line.
     const profile = profileResult.data;
 
     // ── Phase 2: Structure (household) ───────────────────────────────────
@@ -190,7 +195,8 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     if (householdsResult.error) {
       setAppHydrationState('error');
-      setAppDataError(householdsResult.error.message);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your household. Please try again.');
       return;
     }
 
@@ -200,8 +206,6 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     );
 
     if (!activeHousehold) {
-      // Valid state: profile loaded, no household membership.
-      // Commit as partial — UI shows household setup flow.
       const context: HydrationContext = {
         profile,
         household:         null,
@@ -227,30 +231,31 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     if (isStale()) return;
 
-    // Any domain failure → error. Check individually for proper type narrowing.
-    // Do not commit partial domain data on failure.
     if (membersResult.error) {
       setAppHydrationState('error');
-      setAppDataError(membersResult.error.message);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your household members. Please try again.');
       return;
     }
     if (tasksResult.error) {
       setAppHydrationState('error');
-      setAppDataError(tasksResult.error.message);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your tasks. Please try again.');
       return;
     }
     if (rewardsResult.error) {
       setAppHydrationState('error');
-      setAppDataError(rewardsResult.error.message);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your rewards. Please try again.');
       return;
     }
     if (pointsResult.error) {
       setAppHydrationState('error');
-      setAppDataError(pointsResult.error.message);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load your points. Please try again.');
       return;
     }
 
-    // All domain results are non-null at this point (discriminated union narrowed above).
     const context: HydrationContext = {
       profile,
       household:         activeHousehold,

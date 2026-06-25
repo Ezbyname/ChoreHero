@@ -26,3 +26,34 @@ export async function getProfileById(
   if (error) return { data: null, error };
   return { data, error: null };
 }
+
+// Ensures a ChoreHero profile exists for the given auth user.
+// Semantically "ensure exists", not "create once". Safe to call on retry,
+// duplicate submit, or race — upsert on id (= authUserId) means no duplicate
+// row is created and no duplicate-key error is surfaced to the caller.
+//
+// profiles.id must equal authUserId (1:1 with auth.users.id, enforced by RLS).
+// No household or household_members row is created here.
+export async function ensureProfileExists(input: {
+  authUserId:   string;
+  displayName:  string;
+  avatarUrl?:   string | null;
+}): Promise<RepositoryResult<ProfileRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id:           input.authUserId,
+        display_name: input.displayName,
+        avatar_url:   input.avatarUrl ?? null,
+      },
+      { onConflict: 'id' },
+    )
+    .select('*')
+    .single();
+
+  if (error) return { data: null, error };
+  return { data, error: null };
+}

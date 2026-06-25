@@ -33,6 +33,7 @@ export const selectAppHydrationState     = (s: AppStore) => s.appHydrationState;
 export const selectIsAppDataReady        = (s: AppStore) => s.isAppDataReady;
 export const selectIsAppDataLoading      = (s: AppStore) => s.isAppDataLoading;
 export const selectAppDataError          = (s: AppStore) => s.appDataError;
+export const selectAppDataErrorCode      = (s: AppStore) => s.appDataErrorCode;
 export const selectActiveHouseholdId     = (s: AppStore) => s.activeHouseholdId;
 export const selectHasNoHousehold        = (s: AppStore) => s.hasNoHousehold;
 export const selectAppDataVersion        = (s: AppStore) => s.appDataVersion;
@@ -45,3 +46,9 @@ export const selectIsHydratedForCurrentUser = (s: AppStore): boolean =>
   Boolean(s.authUser) &&
   s.hydratedForAuthUserId === s.authUser?.id &&
   (s.appHydrationState === 'hydrated' || s.appHydrationState === 'partial');
+
+// True when the auth user has no ChoreHero profile yet.
+// Drives ProfileSetupScreen visibility via AuthenticatedAppGate.
+// This is a recovery UX state, not a hydration state variant.
+export const selectNeedsProfileSetup = (s: AppStore): boolean =>
+  s.appHydrationState === 'error' && s.appDataErrorCode === 'missing_profile';
