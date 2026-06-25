@@ -21,6 +21,11 @@ export const copy = {
       subtitle: 'Family, preferences, and app settings.',
     },
   },
+  settingsScreen: {
+    householdSection: 'Your household',
+    // Shown when hydrated but household is unexpectedly null (invariant guard).
+    noHousehold:      'No household',
+  },
   emptyStates: {
     today:         'Everything is clear for now.',
     myTasks:       'Nothing on your plate right now — nicely done.',

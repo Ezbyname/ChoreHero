@@ -52,3 +52,22 @@ export const selectIsHydratedForCurrentUser = (s: AppStore): boolean =>
 // This is a recovery UX state, not a hydration state variant.
 export const selectNeedsProfileSetup = (s: AppStore): boolean =>
   s.appHydrationState === 'error' && s.appDataErrorCode === 'missing_profile';
+
+// ── Active household selectors (T1.5.5) ──────────────────────────────────────
+//
+// Hydration owns active household selection (AppDataBootstrap → commitHydrationSnapshot).
+// These selectors expose the already-selected result to UI.
+// Screens must consume these; they must not call .find(...) or access households[0].
+
+// Alias of selectCurrentHousehold — same field, semantic name for T1.5.5+ screens.
+// Using an alias prevents drift: both always return s.household.
+export const selectActiveHousehold = selectCurrentHousehold;
+
+// Derived from selectActiveHousehold — never resolved independently by screens.
+export const selectActiveHouseholdName = (s: AppStore): string | null =>
+  selectActiveHousehold(s)?.name ?? null;
+
+// True only in the fully hydrated state with a non-null household.
+// 'partial' state = profile exists but no household; not considered "active".
+export const selectHasActiveHousehold = (s: AppStore): boolean =>
+  s.appHydrationState === 'hydrated' && selectActiveHousehold(s) !== null;

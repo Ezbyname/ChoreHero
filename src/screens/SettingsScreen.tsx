@@ -7,20 +7,33 @@ import { signOut } from '@/services/supabase/auth';
 import {
   selectAuthUserEmail,
   selectIsAuthenticated,
+  selectActiveHouseholdName,
+  selectHasActiveHousehold,
+  selectCurrentUserName,
 } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
 
 /**
- * Logout section behavior:
- *   - Visible only when authenticated (Supabase session exists).
+ * Settings screen — account info, active household display, sign-out.
+ *
+ * Active household display:
+ *   - Reads from selectActiveHouseholdName (selector only).
+ *   - Does NOT call households.find(...).
+ *   - Does NOT access households[0].
+ *   - Does NOT resolve activeHouseholdId manually.
+ *   - Hydration owns selection; this screen only renders the result.
+ *
+ * Sign-out behavior:
  *   - Calls signOut() wrapper — does not clear Zustand manually.
- *   - Does not navigate imperatively after logout.
  *   - AuthBootstrap receives SIGNED_OUT → clearAuthSession → AuthGate switches tree.
  */
 export function SettingsScreen() {
-  const isAuthenticated = useAppStore(selectIsAuthenticated);
-  const authUserEmail   = useAppStore(selectAuthUserEmail);
+  const isAuthenticated      = useAppStore(selectIsAuthenticated);
+  const authUserEmail        = useAppStore(selectAuthUserEmail);
+  const currentUserName      = useAppStore(selectCurrentUserName);
+  const activeHouseholdName  = useAppStore(selectActiveHouseholdName);
+  const hasActiveHousehold   = useAppStore(selectHasActiveHousehold);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [localError,   setLocalError]   = useState<string | null>(null);
@@ -52,14 +65,33 @@ export function SettingsScreen() {
         subtitle={copy.screens.settings.subtitle}
       />
 
+      {/* ── Household section ─────────────────────────────────────────────── */}
+      {hasActiveHousehold && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {copy.settingsScreen.householdSection}
+          </Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoValue}>
+              {activeHouseholdName ?? copy.settingsScreen.noHousehold}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Account section ───────────────────────────────────────────────── */}
       {isAuthenticated && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{copy.auth.account}</Text>
 
-          {authUserEmail ? (
-            <View style={styles.emailRow}>
-              <Text style={styles.emailLabel}>{copy.auth.signedInAs}</Text>
-              <Text style={styles.emailValue}>{authUserEmail}</Text>
+          {(currentUserName || authUserEmail) ? (
+            <View style={styles.infoRow}>
+              {currentUserName ? (
+                <Text style={styles.infoValue}>{currentUserName}</Text>
+              ) : null}
+              {authUserEmail ? (
+                <Text style={styles.infoLabel}>{authUserEmail}</Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -98,7 +130,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom:  spacing.sm,
   },
-  emailRow: {
+  infoRow: {
     backgroundColor:   colors.surface,
     borderRadius:      10,
     borderWidth:       1,
@@ -106,18 +138,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical:   spacing.md,
     marginBottom:      spacing.sm,
+    gap:               2,
   },
-  emailLabel: {
-    ...typography.caption,
-    color:        colors.textMuted,
-    marginBottom: 2,
-  },
-  emailValue: {
+  infoValue: {
     ...typography.body,
     color: colors.textPrimary,
   },
+  infoLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
   errorBox: {
-    backgroundColor: colors.errorSoft,
+    backgroundColor: '#FEE2E2',
     borderRadius:    8,
     padding:         spacing.md,
     marginBottom:    spacing.sm,
