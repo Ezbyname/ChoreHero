@@ -66,6 +66,7 @@ export const copy = {
     claimSubmitting:     'Sending…',
     claimSuccess:        'Sent! Waiting for a grown-up to approve.',
     claimError:          'We couldn\'t send that. Please try again.',
+    claimDuplicatePending: 'You already have something waiting for approval. Hang tight!',
   },
   auth: {
     // Welcome screen

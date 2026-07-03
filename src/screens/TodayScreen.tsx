@@ -149,6 +149,8 @@ function ClaimContributionForm({ householdId, claimedByProfileId, role }: ClaimF
     if (result.ok) {
       setTitle('');
       setFeedback(copy.contributionClaims.claimSuccess);
+    } else if (result.reason === 'duplicate_pending') {
+      setFeedback(copy.contributionClaims.claimDuplicatePending);
     } else {
       setFeedback(copy.contributionClaims.claimError);
     }

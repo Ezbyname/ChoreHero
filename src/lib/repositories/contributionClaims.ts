@@ -30,6 +30,24 @@ export async function getContributionClaimsForHousehold(
   return { data: data ?? [], error: null };
 }
 
+export async function getPendingContributionClaimForMember(
+  householdId: string,
+  claimedByProfileId: string,
+): Promise<RepositoryResult<ContributionClaimRow | null>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase
+    .from('contribution_claims')
+    .select('*')
+    .eq('household_id', householdId)
+    .eq('claimed_by_profile_id', claimedByProfileId)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (error) return { data: null, error };
+  return { data, error: null };
+}
+
 export async function getContributionClaimById(
   claimId: string,
 ): Promise<RepositoryResult<ContributionClaimRow | null>> {
