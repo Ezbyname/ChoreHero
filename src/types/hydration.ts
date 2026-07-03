@@ -5,6 +5,7 @@ import type {
   TaskRow,
   RewardRow,
   PointsBalanceRow,
+  ContributionClaimRow,
 } from '@/types/supabase';
 
 // Observable states for the app data hydration pipeline.
@@ -23,9 +24,10 @@ export interface HydrationContext {
   profile:           ProfileRow;
   household:         HouseholdRow | null;
   householdMembers:  HouseholdMemberRow[];
-  tasks:             TaskRow[];
-  rewards:           RewardRow[];
-  pointsBalances:    PointsBalanceRow[];
-  activeHouseholdId: string | null;
-  hasNoHousehold:    boolean;
+  tasks:              TaskRow[];
+  rewards:            RewardRow[];
+  pointsBalances:     PointsBalanceRow[];
+  contributionClaims: ContributionClaimRow[];
+  activeHouseholdId:  string | null;
+  hasNoHousehold:     boolean;
 }

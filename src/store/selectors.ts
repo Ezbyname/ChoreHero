@@ -137,3 +137,34 @@ export const selectCanApproveContributionClaim = (s: AppStore): boolean =>
 
 export const selectCanRejectContributionClaim = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.reject_claim');
+
+// ── Contribution claim projection selectors (T1.7.3) ─────────────────────────
+//
+// Contribution ≠ Task: contribution_claims is a separate state source from
+// tasks. Screens must derive claim views from these selectors — never infer
+// claim/review state from Task.status.
+
+export const selectContributionClaims = (s: AppStore) => s.contributionClaims;
+
+// Household-wide claims still awaiting review — feeds the parent review section.
+export const selectPendingContributionClaims = (s: AppStore) =>
+  s.contributionClaims.filter((c) => c.status === 'pending');
+
+// All claims (any status) submitted by the current user.
+export const selectContributionClaimsForCurrentUser = (s: AppStore) => {
+  const userId = s.user?.id ?? null;
+  if (!userId) return [];
+  return s.contributionClaims.filter((c) => c.claimedByProfileId === userId);
+};
+
+// Current user's own claims still awaiting review — "waiting for approval" state.
+export const selectMyPendingContributionClaims = (s: AppStore) =>
+  selectContributionClaimsForCurrentUser(s).filter((c) => c.status === 'pending');
+
+export const selectPendingContributionClaimCount = (s: AppStore): number =>
+  selectPendingContributionClaims(s).length;
+
+// True when the current user can review claims and at least one is waiting.
+// Drives visibility of the review section — permission-gated, not role-compared.
+export const selectHasPendingContributionClaimsToReview = (s: AppStore): boolean =>
+  selectCanApproveContributionClaim(s) && selectPendingContributionClaimCount(s) > 0;
