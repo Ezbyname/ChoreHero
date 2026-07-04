@@ -55,6 +55,19 @@ export const copy = {
     needsAttention: 'Needs attention',
     points:         'pts',
   },
+  contributionClaims: {
+    reviewSectionTitle: 'Waiting for your approval',
+    pendingBadge:        'Waiting for approval',
+    approveButton:       'Approve',
+    rejectButton:        'Not this time',
+    claimSectionTitle:   'Did you do something helpful?',
+    claimFieldPlaceholder: 'What did you do?',
+    claimSubmitButton:   'Send for approval',
+    claimSubmitting:     'Sending…',
+    claimSuccess:        'Sent! Waiting for a grown-up to approve.',
+    claimError:          'We couldn\'t send that. Please try again.',
+    claimDuplicatePending: 'You already have something waiting for approval. Hang tight!',
+  },
   auth: {
     // Welcome screen
     welcomeTitle:    'Welcome to ChoreHero',

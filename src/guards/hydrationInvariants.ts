@@ -91,6 +91,9 @@ export function assertValidHydrationContext(context: HydrationContext): void {
   if (!Array.isArray(context.pointsBalances)) {
     throw new Error('HydrationContext: pointsBalances must be an array.');
   }
+  if (!Array.isArray(context.contributionClaims)) {
+    throw new Error('HydrationContext: contributionClaims must be an array.');
+  }
   if (!Array.isArray(context.householdMembers)) {
     throw new Error('HydrationContext: householdMembers must be an array.');
   }
@@ -124,6 +127,15 @@ export function assertValidHydrationContext(context: HydrationContext): void {
       throw new Error(
         `HydrationContext: pointsBalance for profile "${pb.profile_id}" has ` +
         `household_id "${pb.household_id}", expected "${hid}".`,
+      );
+    }
+  }
+
+  for (const claim of context.contributionClaims) {
+    if (claim.household_id !== hid) {
+      throw new Error(
+        `HydrationContext: contributionClaim "${claim.id}" has household_id "${claim.household_id}", ` +
+        `expected "${hid}".`,
       );
     }
   }
@@ -186,6 +198,11 @@ export function assertPartialHydrationContext(context: HydrationContext): void {
   if (context.pointsBalances.length !== 0) {
     throw new Error(
       'PartialHydrationContext: pointsBalances must be empty when hasNoHousehold is true.',
+    );
+  }
+  if (context.contributionClaims.length !== 0) {
+    throw new Error(
+      'PartialHydrationContext: contributionClaims must be empty when hasNoHousehold is true.',
     );
   }
 }

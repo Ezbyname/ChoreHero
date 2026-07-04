@@ -65,6 +65,11 @@ export type TaskHelpReason =
   | 'not_feeling_well'
   | 'other';
 
+export type ContributionClaimStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
 // ============================================================
 // DATABASE TYPE
 // Matches the shape expected by createClient<Database>().
@@ -415,6 +420,49 @@ export interface Database {
         };
         Relationships: [];
       };
+      // ----------------------------------------------------------
+      // contribution_claims
+      // Bottom-up self-reported contributions, distinct from tasks.
+      // ----------------------------------------------------------
+      contribution_claims: {
+        Row: {
+          id:                     string;
+          household_id:           string;
+          title:                  string;
+          description:            string | null;
+          points:                 number;
+          status:                 ContributionClaimStatus;
+          claimed_by_profile_id:  string;
+          reviewed_by_profile_id: string | null;
+          reviewed_at:            string | null;
+          note:                   string | null;
+          created_at:             string;
+          updated_at:             string;
+        };
+        Insert: {
+          id?:                     string;
+          household_id:            string;
+          title:                   string;
+          description?:            string | null;
+          points?:                 number;
+          status?:                 ContributionClaimStatus;
+          claimed_by_profile_id:   string;
+          reviewed_by_profile_id?: string | null;
+          reviewed_at?:            string | null;
+          note?:                   string | null;
+          created_at?:             string;
+          updated_at?:             string;
+        };
+        Update: {
+          id?:                     string;
+          status?:                 ContributionClaimStatus;
+          reviewed_by_profile_id?: string | null;
+          reviewed_at?:            string | null;
+          note?:                   string | null;
+          updated_at?:             string;
+        };
+        Relationships: [];
+      };
     };
     Views:          Record<string, never>;
     Functions:      Record<string, never>;
@@ -428,6 +476,7 @@ export interface Database {
       service_request_type:     ServiceRequestType;
       task_help_request_status: TaskHelpRequestStatus;
       task_help_reason:         TaskHelpReason;
+      contribution_claim_status: ContributionClaimStatus;
     };
   };
 }
@@ -450,3 +499,4 @@ export type PointsBalanceRow    = Database['public']['Tables']['points_balances'
 export type PointTransactionRow = Database['public']['Tables']['point_transactions']['Row'];
 export type ServiceRequestRow   = Database['public']['Tables']['service_requests']['Row'];
 export type TaskHelpRequestRow  = Database['public']['Tables']['task_help_requests']['Row'];
+export type ContributionClaimRow = Database['public']['Tables']['contribution_claims']['Row'];

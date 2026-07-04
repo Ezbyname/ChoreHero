@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { mockSeed } from '@/mock';
-import type { AppUser, Household, HouseholdMember, PointsBalance, Reward, Task, UserRole } from '@/types';
+import type { AppUser, ContributionClaim, Household, HouseholdMember, PointsBalance, Reward, Task, UserRole } from '@/types';
 import type { AppHydrationState, HydrationContext } from '@/types/hydration';
-import type { HouseholdMemberRole, TaskRow, RewardRow, PointsBalanceRow } from '@/types/supabase';
+import type { HouseholdMemberRole, TaskRow, RewardRow, PointsBalanceRow, ContributionClaimRow } from '@/types/supabase';
 import {
   isHydrationCommitAllowed,
   assertValidHydrationContext,
@@ -24,12 +24,13 @@ export type AppDataErrorCode = 'missing_profile' | 'load_failed' | null;
 
 export interface AppState {
   // ── App data (UI projection of DB state) ─────────────────────────────────
-  user:             AppUser | null;
-  household:        Household | null;
-  tasks:            Task[];
-  rewards:          Reward[];
-  pointsBalances:   PointsBalance[];
-  isMockHydrated:   boolean;
+  user:                AppUser | null;
+  household:           Household | null;
+  tasks:               Task[];
+  rewards:             Reward[];
+  pointsBalances:      PointsBalance[];
+  contributionClaims:  ContributionClaim[];
+  isMockHydrated:      boolean;
 
   // ── Supabase auth identity (managed exclusively by AuthBootstrap) ─────────
   authSession:      Session | null;
@@ -58,13 +59,18 @@ export interface AppState {
 
 interface AppActions {
   // ── App data (mock / reset) ───────────────────────────────────────────────
-  setUser:             (user: AppUser | null) => void;
-  setHousehold:        (household: Household | null) => void;
-  setTasks:            (tasks: Task[]) => void;
-  setRewards:          (rewards: Reward[]) => void;
-  setPointsBalances:   (balances: PointsBalance[]) => void;
-  hydrateFromMockSeed: () => void;
-  resetAppState:       () => void;
+  setUser:               (user: AppUser | null) => void;
+  setHousehold:          (household: Household | null) => void;
+  setTasks:              (tasks: Task[]) => void;
+  setRewards:            (rewards: Reward[]) => void;
+  setPointsBalances:     (balances: PointsBalance[]) => void;
+  setContributionClaims: (claims: ContributionClaim[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors how hydration
+  // mapping stays inside the store. Used by feature functions to refresh
+  // the claims slice after a single mutation, without a full re-hydration.
+  setContributionClaimRows: (rows: ContributionClaimRow[]) => void;
+  hydrateFromMockSeed:   () => void;
+  resetAppState:         () => void;
 
   // ── Auth (AuthBootstrap is the sole caller) ───────────────────────────────
   applyAuthSession:    (session: Session | null) => void;
@@ -99,12 +105,13 @@ export type AppStore = AppState & AppActions;
 // ============================================================
 
 const initialState: AppState = {
-  user:             null,
-  household:        null,
-  tasks:            [],
-  rewards:          [],
-  pointsBalances:   [],
-  isMockHydrated:   false,
+  user:                null,
+  household:           null,
+  tasks:               [],
+  rewards:             [],
+  pointsBalances:      [],
+  contributionClaims:  [],
+  isMockHydrated:      false,
 
   authSession:      null,
   authUser:         null,
@@ -184,6 +191,22 @@ function mapPointsBalanceRow(pb: PointsBalanceRow): PointsBalance {
   };
 }
 
+function mapContributionClaimRow(c: ContributionClaimRow): ContributionClaim {
+  return {
+    id:                  c.id,
+    householdId:         c.household_id,
+    title:               c.title,
+    description:         c.description ?? undefined,
+    points:              c.points,
+    status:              c.status,
+    claimedByProfileId:  c.claimed_by_profile_id,
+    reviewedByProfileId: c.reviewed_by_profile_id ?? undefined,
+    reviewedAt:          c.reviewed_at ?? undefined,
+    note:                c.note ?? undefined,
+    createdAt:           c.created_at,
+  };
+}
+
 // ============================================================
 // STORE
 // ============================================================
@@ -193,22 +216,26 @@ export const useAppStore = create<AppStore>((set) => ({
 
   // ── App data actions ─────────────────────────────────────────────────────
 
-  setUser:           (user)      => set({ user }),
-  setHousehold:      (household) => set({ household }),
-  setTasks:          (tasks)     => set({ tasks }),
-  setRewards:        (rewards)   => set({ rewards }),
-  setPointsBalances: (balances)  => set({ pointsBalances: balances }),
+  setUser:               (user)      => set({ user }),
+  setHousehold:          (household) => set({ household }),
+  setTasks:              (tasks)     => set({ tasks }),
+  setRewards:            (rewards)   => set({ rewards }),
+  setPointsBalances:     (balances)  => set({ pointsBalances: balances }),
+  setContributionClaims: (claims)    => set({ contributionClaims: claims }),
+  setContributionClaimRows: (rows)   =>
+    set({ contributionClaims: rows.map(mapContributionClaimRow) }),
 
   hydrateFromMockSeed: () =>
     set((state) => {
       if (state.isMockHydrated) return state;
       return {
-        user:           mockSeed.currentUser,
-        household:      mockSeed.household,
-        tasks:          mockSeed.tasks,
-        rewards:        mockSeed.rewards,
-        pointsBalances: mockSeed.pointsBalances,
-        isMockHydrated: true,
+        user:               mockSeed.currentUser,
+        household:          mockSeed.household,
+        tasks:              mockSeed.tasks,
+        rewards:            mockSeed.rewards,
+        pointsBalances:     mockSeed.pointsBalances,
+        contributionClaims: mockSeed.contributionClaims,
+        isMockHydrated:     true,
       };
     }),
 
@@ -322,9 +349,10 @@ export const useAppStore = create<AppStore>((set) => ({
       return {
         user,
         household,
-        tasks:           context.tasks.map(mapTaskRow),
-        rewards:         context.rewards.map(mapRewardRow),
-        pointsBalances:  context.pointsBalances.map(mapPointsBalanceRow),
+        tasks:               context.tasks.map(mapTaskRow),
+        rewards:             context.rewards.map(mapRewardRow),
+        pointsBalances:      context.pointsBalances.map(mapPointsBalanceRow),
+        contributionClaims:  context.contributionClaims.map(mapContributionClaimRow),
 
         activeHouseholdId:     context.activeHouseholdId,
         hasNoHousehold:        context.hasNoHousehold,
@@ -342,11 +370,12 @@ export const useAppStore = create<AppStore>((set) => ({
   // Resets all app data and hydration state without touching auth fields.
   clearAppData: () =>
     set({
-      user:             null,
-      household:        null,
-      tasks:            [],
-      rewards:          [],
-      pointsBalances:   [],
+      user:               null,
+      household:          null,
+      tasks:              [],
+      rewards:            [],
+      pointsBalances:     [],
+      contributionClaims: [],
 
       activeHouseholdId:     null,
       hasNoHousehold:        false,

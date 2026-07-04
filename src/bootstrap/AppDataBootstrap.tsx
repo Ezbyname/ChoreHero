@@ -15,6 +15,7 @@ import {
   getTasksForHousehold,
   getRewardsForHousehold,
   getPointsBalancesForHousehold,
+  getContributionClaimsForHousehold,
 } from '@/lib/repositories';
 import { sortHouseholdCandidatesDeterministically } from '@/guards/hydrationInvariants';
 import type { HydrationContext } from '@/types/hydration';
@@ -208,13 +209,14 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (!activeHousehold) {
       const context: HydrationContext = {
         profile,
-        household:         null,
-        householdMembers:  [],
-        tasks:             [],
-        rewards:           [],
-        pointsBalances:    [],
-        activeHouseholdId: null,
-        hasNoHousehold:    true,
+        household:          null,
+        householdMembers:   [],
+        tasks:              [],
+        rewards:            [],
+        pointsBalances:     [],
+        contributionClaims: [],
+        activeHouseholdId:  null,
+        hasNoHousehold:     true,
       };
       commitHydrationSnapshot({ context, runId, sequence });
       return;
@@ -222,11 +224,12 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     // ── Phase 3: Domain (parallel) ───────────────────────────────────────
 
-    const [membersResult, tasksResult, rewardsResult, pointsResult] = await Promise.all([
+    const [membersResult, tasksResult, rewardsResult, pointsResult, claimsResult] = await Promise.all([
       getHouseholdMembers(activeHousehold.id),
       getTasksForHousehold(activeHousehold.id),
       getRewardsForHousehold(activeHousehold.id),
       getPointsBalancesForHousehold(activeHousehold.id),
+      getContributionClaimsForHousehold(activeHousehold.id),
     ]);
 
     if (isStale()) return;
@@ -255,16 +258,23 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       setAppDataError('We couldn\'t load your points. Please try again.');
       return;
     }
+    if (claimsResult.error) {
+      setAppHydrationState('error');
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load contribution claims. Please try again.');
+      return;
+    }
 
     const context: HydrationContext = {
       profile,
-      household:         activeHousehold,
-      householdMembers:  membersResult.data,
-      tasks:             tasksResult.data,
-      rewards:           rewardsResult.data,
-      pointsBalances:    pointsResult.data,
-      activeHouseholdId: activeHousehold.id,
-      hasNoHousehold:    false,
+      household:          activeHousehold,
+      householdMembers:   membersResult.data,
+      tasks:              tasksResult.data,
+      rewards:            rewardsResult.data,
+      pointsBalances:     pointsResult.data,
+      contributionClaims: claimsResult.data,
+      activeHouseholdId:  activeHousehold.id,
+      hasNoHousehold:     false,
     };
 
     commitHydrationSnapshot({ context, runId, sequence });
