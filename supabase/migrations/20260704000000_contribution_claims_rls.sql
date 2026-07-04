@@ -22,12 +22,25 @@
 -- This function runs as its owner (bypassing household_members' RLS
 -- internally) and is the only way these policies can correctly answer
 -- "is this profile an active member of this household, with one of the
--- given roles?". It is not a general-purpose RPC — it is not exposed for
--- direct client use beyond what RLS policies invoke.
+-- given roles?".
+--
+-- It lives in `internal`, a schema not listed in Supabase's exposed-schema
+-- config (PostgREST only auto-exposes schemas explicitly added there,
+-- default is public/graphql_public only) — so it is reachable from RLS
+-- policy evaluation (which happens inside Postgres itself) but not
+-- callable as a direct RPC endpoint by any client role. Putting it in
+-- `public` with EXECUTE granted to `authenticated` (required for RLS to
+-- invoke it) would otherwise make it directly callable by any logged-in
+-- user with arbitrary (household_id, profile_id) arguments — a
+-- cross-household membership oracle, since it takes profile_id as a
+-- caller-supplied argument rather than always using auth.uid() — even
+-- though household_members itself has no SELECT policy of its own.
 --
 -- search_path is pinned to prevent search_path hijacking in a
 -- SECURITY DEFINER function (standard Postgres hardening practice).
-CREATE OR REPLACE FUNCTION is_household_member(
+CREATE SCHEMA IF NOT EXISTS internal;
+
+CREATE OR REPLACE FUNCTION internal.is_household_member(
   p_household_id uuid,
   p_profile_id    uuid,
   p_roles         household_member_role[] DEFAULT NULL
@@ -46,7 +59,11 @@ AS $$
   );
 $$;
 
-GRANT EXECUTE ON FUNCTION is_household_member(uuid, uuid, household_member_role[]) TO authenticated;
+-- Postgres grants EXECUTE to PUBLIC by default on function creation;
+-- revoke it explicitly as defense-in-depth even though the schema
+-- relocation above already prevents direct RPC access.
+REVOKE EXECUTE ON FUNCTION internal.is_household_member(uuid, uuid, household_member_role[]) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION internal.is_household_member(uuid, uuid, household_member_role[]) TO authenticated;
 
 -- ============================================================
 -- contribution_claims RLS policies
@@ -60,7 +77,7 @@ ON contribution_claims
 FOR SELECT
 TO authenticated
 USING (
-  is_household_member(household_id, auth.uid())
+  internal.is_household_member(household_id, auth.uid())
 );
 
 -- INSERT: claimant must be an active household member (matches
@@ -80,7 +97,7 @@ WITH CHECK (
   AND status = 'pending'
   AND reviewed_by_profile_id IS NULL
   AND reviewed_at IS NULL
-  AND is_household_member(
+  AND internal.is_household_member(
     household_id,
     auth.uid(),
     ARRAY['owner','admin','adult','child']::household_member_role[]
@@ -104,7 +121,7 @@ FOR UPDATE
 TO authenticated
 USING (
   status = 'pending'
-  AND is_household_member(
+  AND internal.is_household_member(
     household_id,
     auth.uid(),
     ARRAY['owner','admin','adult']::household_member_role[]
@@ -113,7 +130,7 @@ USING (
 WITH CHECK (
   status IN ('approved', 'rejected')
   AND reviewed_by_profile_id = auth.uid()
-  AND is_household_member(
+  AND internal.is_household_member(
     household_id,
     auth.uid(),
     ARRAY['owner','admin','adult']::household_member_role[]
