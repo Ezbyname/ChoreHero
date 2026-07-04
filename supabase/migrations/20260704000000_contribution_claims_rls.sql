@@ -19,22 +19,34 @@
 -- rows for any authenticated caller, making every policy below vacuously
 -- deny everything regardless of real membership.
 --
--- This function runs as its owner (bypassing household_members' RLS
--- internally) and is the only way these policies can correctly answer
--- "is this profile an active member of this household, with one of the
--- given roles?".
+-- This function exists solely to support RLS policy evaluation below —
+-- it is not intended to be exposed as a public RPC interface. It runs as
+-- its owner (bypassing household_members' RLS internally) and is the
+-- only way these policies can correctly answer "is this profile an
+-- active member of this household, with one of the given roles?".
 --
--- It lives in `internal`, a schema not listed in Supabase's exposed-schema
--- config (PostgREST only auto-exposes schemas explicitly added there,
--- default is public/graphql_public only) — so it is reachable from RLS
--- policy evaluation (which happens inside Postgres itself) but not
--- callable as a direct RPC endpoint by any client role. Putting it in
+-- Risk this addresses: the function takes profile_id as a caller-supplied
+-- argument rather than always using auth.uid() internally. If it lived in
 -- `public` with EXECUTE granted to `authenticated` (required for RLS to
--- invoke it) would otherwise make it directly callable by any logged-in
--- user with arbitrary (household_id, profile_id) arguments — a
--- cross-household membership oracle, since it takes profile_id as a
--- caller-supplied argument rather than always using auth.uid() — even
--- though household_members itself has no SELECT policy of its own.
+-- invoke it), it would also be directly callable by any logged-in client
+-- with arbitrary (household_id, profile_id) arguments — a cross-household
+-- membership oracle, even though household_members itself has no SELECT
+-- policy of its own.
+--
+-- Mitigation implemented and verified locally: the function is defined in
+-- `internal`, a dedicated non-public helper schema, rather than `public`.
+-- EXECUTE is revoked from PUBLIC and granted only to `authenticated` (the
+-- minimum role required for the RLS policies below to invoke it). Local
+-- PostgreSQL validation confirmed that direct invocation by the
+-- `authenticated` role is rejected ("permission denied for schema
+-- internal"), even when fully schema-qualified, while the RLS policies
+-- below continue to invoke it correctly and produce the same
+-- authorization results as before this change (the policy body resolves
+-- the function reference once at CREATE POLICY time, so re-checking
+-- schema USAGE at each row evaluation is not required for that path).
+-- This project's live Supabase/PostgREST configuration was not available
+-- to verify, so no claim is made here about whether `internal` is
+-- additionally excluded from PostgREST's own schema routing.
 --
 -- search_path is pinned to prevent search_path hijacking in a
 -- SECURITY DEFINER function (standard Postgres hardening practice).
