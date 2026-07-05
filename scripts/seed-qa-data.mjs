@@ -108,26 +108,33 @@ async function findUserByEmail(email) {
 }
 
 async function ensureUser({ email, displayName }) {
+  let userId;
+
   const existing = await findUserByEmail(email);
   if (existing) {
     console.log(`  user exists: ${email} (${existing.id})`);
-    return existing.id;
+    userId = existing.id;
+  } else {
+    const { data, error } = await supabase.auth.admin.createUser({
+      email,
+      password: TEST_PASSWORD,
+      email_confirm: true, // pre-confirms the user for the dev auth flow (does not skip a step that would otherwise run later)
+    });
+    if (error) throw error;
+    console.log(`  user created: ${email} (${data.user.id})`);
+    userId = data.user.id;
   }
 
-  const { data, error } = await supabase.auth.admin.createUser({
-    email,
-    password: TEST_PASSWORD,
-    email_confirm: true, // pre-confirms the user for the dev auth flow (does not skip a step that would otherwise run later)
-  });
-  if (error) throw error;
-  console.log(`  user created: ${email} (${data.user.id})`);
-
+  // Always upsert, even for a pre-existing auth user: an earlier run may have
+  // created the auth user but failed before its profiles row was written
+  // (e.g. profiles table not migrated yet at the time), leaving the two out
+  // of sync. Upsert is idempotent, so this is safe to repeat every run.
   const { error: profileError } = await supabase
     .from('profiles')
-    .upsert({ id: data.user.id, display_name: displayName }, { onConflict: 'id' });
+    .upsert({ id: userId, display_name: displayName }, { onConflict: 'id' });
   if (profileError) throw profileError;
 
-  return data.user.id;
+  return userId;
 }
 
 async function reset() {
