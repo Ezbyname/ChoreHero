@@ -12,5 +12,6 @@
       "@/theme/*":       ["src/theme/*"],
       "@/content/*":     ["src/content/*"]
     }
-  }
+  },
+  "exclude": ["e2e", "playwright.config.ts", "node_modules"]
 }
