@@ -28,6 +28,12 @@ export const COPY = {
 
 export async function login(page: Page, email: string, password: string = QA_PASSWORD): Promise<void> {
   await page.goto('/');
+
+  // AuthStack's initial route is AuthWelcome, not Login (see AuthStack.tsx) —
+  // its secondary button happens to share the exact same "Sign in" copy
+  // string as the login form's submit button, so this click navigates there.
+  await page.getByText(COPY.signInButton, { exact: true }).click();
+
   await page.getByPlaceholder(COPY.emailPlaceholder).fill(email);
   await page.getByPlaceholder(COPY.passwordPlaceholder).fill(password);
   await page.getByText(COPY.signInButton, { exact: true }).click();
