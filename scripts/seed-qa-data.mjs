@@ -117,7 +117,7 @@ async function ensureUser({ email, displayName }) {
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password: TEST_PASSWORD,
-    email_confirm: true, // skips email-confirmation friction for QA
+    email_confirm: true, // pre-confirms the user for the dev auth flow (does not skip a step that would otherwise run later)
   });
   if (error) throw error;
   console.log(`  user created: ${email} (${data.user.id})`);
