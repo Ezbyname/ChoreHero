@@ -6,11 +6,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { FamilyAvatar } from '@/components/FamilyAvatar';
 import { ensureProfileExists } from '@/lib/repositories';
 import { selectAuthUser } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
 import { copy } from '@/content/copy';
+
+// Small, fixed set — not a full emoji picker library. Optional: a member can
+// create their profile with no avatar selected and get the initials fallback
+// (see FamilyAvatar) until they set one.
+const AVATAR_EMOJI_OPTIONS = ['😀', '😎', '🦸', '🐶', '🐱', '🦖', '🐸', '🌟', '⚽', '🎨', '🚀', '🌈'];
 
 /**
  * Recovery UX for authenticated users who have no ChoreHero profile yet.
@@ -30,6 +36,7 @@ export function ProfileSetupScreen() {
   const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
 
   const [displayName, setDisplayName] = useState('');
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -58,6 +65,7 @@ export function ProfileSetupScreen() {
       const result = await ensureProfileExists({
         authUserId:  authUser.id,
         displayName: trimmed,
+        avatarEmoji: selectedEmoji,
       });
 
       if (result.error) {
@@ -104,6 +112,26 @@ export function ProfileSetupScreen() {
           {validationError ? (
             <Text style={styles.validationText}>{validationError}</Text>
           ) : null}
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>{copy.profileSetup.avatarLabel}</Text>
+          <View style={styles.avatarRow}>
+            <FamilyAvatar name={displayName} avatarEmoji={selectedEmoji ?? undefined} size={48} />
+            <View style={styles.emojiGrid}>
+              {AVATAR_EMOJI_OPTIONS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[styles.emojiOption, selectedEmoji === emoji && styles.emojiOptionSelected]}
+                  onPress={() => setSelectedEmoji(emoji === selectedEmoji ? null : emoji)}
+                  disabled={isSubmitting}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.emojiOptionText}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
         {submitError ? (
@@ -167,6 +195,34 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: '#B91C1C',
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.md,
+  },
+  emojiGrid: {
+    flex:          1,
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           spacing.xs,
+  },
+  emojiOption: {
+    width:           36,
+    height:          36,
+    borderRadius:    18,
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: colors.surface,
+    borderWidth:     1,
+    borderColor:     colors.borderSoft,
+  },
+  emojiOptionSelected: {
+    borderColor:     colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  emojiOptionText: {
+    fontSize: 18,
   },
   validationText: {
     ...typography.caption,

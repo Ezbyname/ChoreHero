@@ -1,15 +1,18 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { FamilyAvatar } from '@/components/FamilyAvatar';
 import { copy } from '@/content/copy';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
 import type { Task } from '@/types';
 
 interface TaskCardProps {
-  task:         Task;
-  assigneeName: string | undefined;
+  task:                Task;
+  assigneeName:        string | undefined;
+  assigneeAvatarUrl?:   string;
+  assigneeAvatarEmoji?: string;
 }
 
-export function TaskCard({ task, assigneeName }: TaskCardProps) {
+export function TaskCard({ task, assigneeName, assigneeAvatarUrl, assigneeAvatarEmoji }: TaskCardProps) {
   const isUnassigned     = !task.assigneeId;
   const isNeedsAttention = task.status === 'needs_attention';
 
@@ -28,9 +31,19 @@ export function TaskCard({ task, assigneeName }: TaskCardProps) {
       <Text style={styles.title} numberOfLines={2}>{task.title}</Text>
 
       <View style={styles.meta}>
-        <Text style={[styles.assignee, isUnassigned && styles.assigneeUnset]}>
-          {displayName}
-        </Text>
+        <View style={styles.assigneeRow}>
+          {!isUnassigned && (
+            <FamilyAvatar
+              name={displayName}
+              avatarUrl={assigneeAvatarUrl}
+              avatarEmoji={assigneeAvatarEmoji}
+              size={20}
+            />
+          )}
+          <Text style={[styles.assignee, isUnassigned && styles.assigneeUnset]}>
+            {displayName}
+          </Text>
+        </View>
 
         {task.points != null && task.points > 0 && (
           <Text style={styles.points}>{task.points} {copy.taskCard.points}</Text>
@@ -77,6 +90,12 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     justifyContent: 'space-between',
     alignItems:     'center',
+  },
+  assigneeRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.xs,
+    flex:          1,
   },
   assignee: {
     ...typography.caption,

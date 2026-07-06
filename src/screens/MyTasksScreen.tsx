@@ -5,7 +5,7 @@ import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
-import { getMemberNameByUserId } from '@/features/household/householdUtils';
+import { getMemberByUserId, getMemberNameByUserId } from '@/features/household/householdUtils';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -47,6 +47,8 @@ export function MyTasksScreen() {
               key={task.id}
               task={task}
               assigneeName={getMemberNameByUserId(members, task.assigneeId)}
+              assigneeAvatarUrl={getMemberByUserId(members, task.assigneeId)?.avatarUrl}
+              assigneeAvatarEmoji={getMemberByUserId(members, task.assigneeId)?.avatarEmoji}
             />
           ))}
         </ScrollView>

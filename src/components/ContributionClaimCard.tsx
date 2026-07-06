@@ -1,16 +1,25 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { FamilyAvatar } from '@/components/FamilyAvatar';
 import { copy } from '@/content/copy';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
 import type { ContributionClaim } from '@/types';
 
 interface ContributionClaimCardProps {
-  claim:        ContributionClaim;
-  claimantName: string | undefined;
-  children?:    React.ReactNode; // review actions (approve/reject), rendered by the caller
+  claim:              ContributionClaim;
+  claimantName:       string | undefined;
+  claimantAvatarUrl?:   string;
+  claimantAvatarEmoji?: string;
+  children?:          React.ReactNode; // review actions (approve/reject), rendered by the caller
 }
 
-export function ContributionClaimCard({ claim, claimantName, children }: ContributionClaimCardProps) {
+export function ContributionClaimCard({
+  claim,
+  claimantName,
+  claimantAvatarUrl,
+  claimantAvatarEmoji,
+  children,
+}: ContributionClaimCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.badge}>
@@ -20,7 +29,15 @@ export function ContributionClaimCard({ claim, claimantName, children }: Contrib
       <Text style={styles.title} numberOfLines={2}>{claim.title}</Text>
 
       <View style={styles.meta}>
-        <Text style={styles.claimant}>{claimantName ?? '—'}</Text>
+        <View style={styles.claimantRow}>
+          <FamilyAvatar
+            name={claimantName ?? '—'}
+            avatarUrl={claimantAvatarUrl}
+            avatarEmoji={claimantAvatarEmoji}
+            size={20}
+          />
+          <Text style={styles.claimant}>{claimantName ?? '—'}</Text>
+        </View>
         {claim.points > 0 && (
           <Text style={styles.points}>{claim.points} {copy.taskCard.points}</Text>
         )}
@@ -64,6 +81,12 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     justifyContent: 'space-between',
     alignItems:     'center',
+  },
+  claimantRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.xs,
+    flex:          1,
   },
   claimant: {
     ...typography.caption,

@@ -124,6 +124,7 @@ export const copy = {
     body:             'This is the name your family will see inside ChoreHero.',
     fieldLabel:       'Display name',
     fieldPlaceholder: 'Your name',
+    avatarLabel:      'Pick an avatar (optional)',
     button:           'Create profile',
     buttonLoading:    'Creating your profile…',
     validationEmpty:  'Please enter a display name.',

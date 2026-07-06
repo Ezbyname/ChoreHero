@@ -9,7 +9,7 @@ import { copy } from '@/content/copy';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
-import { getMemberNameByUserId } from '@/features/household/householdUtils';
+import { getMemberByUserId, getMemberNameByUserId } from '@/features/household/householdUtils';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -97,6 +97,8 @@ function ContributionReviewSection({ claims, members, householdId, role, reviewe
           key={claim.id}
           claim={claim}
           claimantName={getMemberNameByUserId(members, claim.claimedByProfileId)}
+          claimantAvatarUrl={getMemberByUserId(members, claim.claimedByProfileId)?.avatarUrl}
+          claimantAvatarEmoji={getMemberByUserId(members, claim.claimedByProfileId)?.avatarEmoji}
         >
           <View style={styles.reviewActions}>
             <TouchableOpacity
@@ -240,6 +242,8 @@ export function TodayScreen() {
                 key={task.id}
                 task={task}
                 assigneeName={getMemberNameByUserId(members, task.assigneeId)}
+                assigneeAvatarUrl={getMemberByUserId(members, task.assigneeId)?.avatarUrl}
+                assigneeAvatarEmoji={getMemberByUserId(members, task.assigneeId)?.avatarEmoji}
               />
             ))}
           </>
