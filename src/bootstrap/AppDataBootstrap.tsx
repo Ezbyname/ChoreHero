@@ -118,8 +118,19 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     // canHydrateAppData is true — evaluate whether to trigger a run.
     // 'idle' covers both initial state and post-retry state set by
     // requestAppDataHydrationRetry (called after ProfileSetupScreen succeeds).
+    //
+    // 'error' is deliberately NOT included here. appHydrationState is itself
+    // a dependency of this effect, so if 'error' were treated as "needs a
+    // run," every failed hydration would immediately re-trigger itself the
+    // instant setAppHydrationState('error') committed — an uncontrolled
+    // infinite loop (loading -> error -> loading -> ...) with no terminal
+    // state, since 'loading' is set synchronously at the start of every
+    // iteration while 'error' only appears after the async round trip
+    // resolves. 'error' is a terminal state by design; only an explicit
+    // requestAppDataHydrationRetry() call (which resets to 'idle') may
+    // re-trigger hydration after a failure.
     const userChanged        = authUser.id !== hydratedForAuthUserId;
-    const notHydratedForUser = appHydrationState === 'idle' || appHydrationState === 'error';
+    const notHydratedForUser = appHydrationState === 'idle';
     const shouldHydrate      =
       pendingHydrationRef.current || userChanged || notHydratedForUser;
 
