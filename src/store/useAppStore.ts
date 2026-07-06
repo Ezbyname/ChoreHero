@@ -143,17 +143,25 @@ function mapMemberRole(role: HouseholdMemberRole): UserRole {
 }
 
 function mapHouseholdMembers(
-  rows: HydrationContext['householdMembers'],
+  rows:     HydrationContext['householdMembers'],
+  profiles: HydrationContext['memberProfiles'],
 ): HouseholdMember[] {
-  return rows.map((m) => ({
-    id:        m.id,
-    userId:    m.profile_id,
-    // display_name_override is set per household; full name requires a profile join.
-    // Profile joins are deferred — T1.4.7 resolves names from available data only.
-    name:      m.display_name_override ?? m.profile_id,
-    role:      mapMemberRole(m.role),
-    avatarUrl: undefined,
-  }));
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  return rows.map((m) => {
+    const profile = profileById.get(m.profile_id);
+    return {
+      id:          m.id,
+      userId:      m.profile_id,
+      // display_name_override (per-household nickname) wins if set;
+      // otherwise fall back to the profile's own name, then the raw id
+      // if the profile fetch failed or the profile hasn't loaded.
+      name:        m.display_name_override ?? profile?.display_name ?? m.profile_id,
+      role:        mapMemberRole(m.role),
+      avatarUrl:   profile?.avatar_url ?? undefined,
+      avatarEmoji: profile?.avatar_emoji ?? undefined,
+    };
+  });
 }
 
 function mapTaskRow(t: TaskRow): Task {
@@ -332,9 +340,10 @@ export const useAppStore = create<AppStore>((set) => ({
       const isPartial = context.hasNoHousehold;
 
       const user: AppUser = {
-        id:        context.profile.id,
-        name:      context.profile.display_name,
-        avatarUrl: context.profile.avatar_url ?? undefined,
+        id:          context.profile.id,
+        name:        context.profile.display_name,
+        avatarUrl:   context.profile.avatar_url ?? undefined,
+        avatarEmoji: context.profile.avatar_emoji ?? undefined,
         // email comes from authUser; not stored in profiles table
       };
 
@@ -342,7 +351,7 @@ export const useAppStore = create<AppStore>((set) => ({
         ? {
             id:      context.household.id,
             name:    context.household.name,
-            members: mapHouseholdMembers(context.householdMembers),
+            members: mapHouseholdMembers(context.householdMembers, context.memberProfiles),
           }
         : null;
 

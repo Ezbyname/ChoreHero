@@ -27,6 +27,23 @@ export async function getProfileById(
   return { data, error: null };
 }
 
+// Batch lookup for household member display (name, avatar_url, avatar_emoji).
+// Empty input returns an empty array without a network call.
+export async function getProfilesByIds(
+  profileIds: string[],
+): Promise<RepositoryResult<ProfileRow[]>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+  if (profileIds.length === 0) return { data: [], error: null };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', profileIds);
+
+  if (error) return { data: null, error };
+  return { data: data ?? [], error: null };
+}
+
 // Ensures a ChoreHero profile exists for the given auth user.
 // Semantically "ensure exists", not "create once". Safe to call on retry,
 // duplicate submit, or race — upsert on id (= authUserId) means no duplicate
@@ -38,6 +55,7 @@ export async function ensureProfileExists(input: {
   authUserId:   string;
   displayName:  string;
   avatarUrl?:   string | null;
+  avatarEmoji?: string | null;
 }): Promise<RepositoryResult<ProfileRow>> {
   if (!supabase) return { data: null, error: notConfiguredError() };
 
@@ -48,6 +66,7 @@ export async function ensureProfileExists(input: {
         id:           input.authUserId,
         display_name: input.displayName,
         avatar_url:   input.avatarUrl ?? null,
+        avatar_emoji: input.avatarEmoji ?? null,
       },
       { onConflict: 'id' },
     )

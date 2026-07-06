@@ -10,6 +10,7 @@ import {
 } from '@/store/selectors';
 import {
   getProfileById,
+  getProfilesByIds,
   getHouseholdsForProfile,
   getHouseholdMembers,
   getTasksForHousehold,
@@ -211,6 +212,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
         profile,
         household:          null,
         householdMembers:   [],
+        memberProfiles:     [],
         tasks:              [],
         rewards:            [],
         pointsBalances:     [],
@@ -265,10 +267,21 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       return;
     }
 
+    // Separate follow-up fetch: depends on membersResult's profile_ids, so it
+    // cannot join the Promise.all above. Failure here degrades to empty
+    // profiles (names fall back to profile_id in the mapper) rather than a
+    // full hydration error — member display is not critical-path.
+    const memberProfilesResult = await getProfilesByIds(
+      membersResult.data.map((m) => m.profile_id),
+    );
+
+    if (isStale()) return;
+
     const context: HydrationContext = {
       profile,
       household:          activeHousehold,
       householdMembers:   membersResult.data,
+      memberProfiles:     memberProfilesResult.data ?? [],
       tasks:              tasksResult.data,
       rewards:            rewardsResult.data,
       pointsBalances:     pointsResult.data,
