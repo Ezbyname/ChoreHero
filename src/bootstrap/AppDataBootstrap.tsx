@@ -72,6 +72,13 @@ function resolveActiveHousehold(
  * AppDataBootstrap is the sole caller of hydration store actions.
  * requestAppDataHydrationRetry() resets state to idle so this bootstrap
  * re-triggers the pipeline for the same auth user (used by ProfileSetupScreen).
+ *
+ * Every terminal setAppHydrationState call (success or failure) passes the
+ * resolved auth user id — see useAppStore.ts's setAppHydrationState comment.
+ * Omitting it on a failure path previously left hydratedForAuthUserId stuck
+ * at its initial null for any user whose hydration ended in an error, making
+ * shouldHydrate's userChanged check unconditionally true forever and
+ * producing an infinite retry loop independent of appHydrationState.
  */
 export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const isAuthResolved  = useAppStore(selectIsAuthResolved);
@@ -97,27 +104,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const canHydrateAppData =
     isAuthResolved && isAuthenticated && !!authUser && isSupabaseConfigured;
 
-  // TEMPORARY DIAGNOSTIC INSTRUMENTATION — remove once the stuck-loading
-  // report is resolved. instanceId is stable for the lifetime of one mount;
-  // a new value appearing in the console mid-session proves a remount.
-  const instanceId = useRef(Math.random().toString(36).slice(2, 8)).current;
-
   useEffect(() => {
-    console.log('[hydrate:mount]', instanceId);
-    return () => console.log('[hydrate:unmount]', instanceId);
-  }, [instanceId]);
-
-  useEffect(() => {
-    console.log('[hydrate:effect]', {
-      instanceId,
-      isAuthResolved,
-      isAuthenticated,
-      authUserId: authUser?.id,
-      canHydrateAppData,
-      appHydrationState,
-      hydratedForAuthUserId,
-    });
-
     if (!isAuthResolved) {
       return;
     }
@@ -154,14 +141,6 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     const shouldHydrate      =
       pendingHydrationRef.current || userChanged || notHydratedForUser;
 
-    console.log('[hydrate:decision]', {
-      instanceId,
-      userChanged,
-      notHydratedForUser,
-      pending: pendingHydrationRef.current,
-      shouldHydrate,
-    });
-
     if (!shouldHydrate) {
       return;
     }
@@ -172,16 +151,14 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     const sequence = hydrationSequenceRef.current + 1;
     hydrationSequenceRef.current = sequence;
 
-    console.log('[hydrate:startRun]', { instanceId, runId, sequence });
     startHydrationRun({ runId, sequence });
 
     const run = async () => {
       try {
         await hydrateForUser({ userId: authUser.id, runId, sequence });
-      } catch (err) {
-        console.log('[hydrate:catch]', { instanceId, runId, sequence, err });
+      } catch {
         if (hydrationSequenceRef.current === sequence) {
-          setAppHydrationState('error');
+          setAppHydrationState('error', authUser.id);
           setAppDataErrorCode('load_failed');
           setAppDataError('An unexpected error occurred. Please try again.');
         }
@@ -209,21 +186,10 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     const profileResult = await getProfileById(userId);
 
-    console.log('[hydrate:profileResult]', {
-      instanceId,
-      runId,
-      sequence,
-      currentSequence: hydrationSequenceRef.current,
-      isStale: isStale(),
-      hasData: !!profileResult.data,
-      error: profileResult.error,
-    });
-
     if (isStale()) return;
 
     if (profileResult.error) {
-      console.log('[hydrate:setState]', { instanceId, runId, next: 'error/load_failed (profile error)' });
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your profile. Please try again.');
       return;
@@ -232,8 +198,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (!profileResult.data) {
       // maybeSingle() returned null with no error — profile row does not exist.
       // Valid state for a new auth user. Surface as recovery UX (not a generic error).
-      console.log('[hydrate:setState]', { instanceId, runId, next: 'error/missing_profile' });
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('missing_profile');
       setAppDataError('No ChoreHero profile found. Let\'s set one up.');
       return;
@@ -249,7 +214,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (isStale()) return;
 
     if (householdsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your household. Please try again.');
       return;
@@ -290,31 +255,31 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (isStale()) return;
 
     if (membersResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your household members. Please try again.');
       return;
     }
     if (tasksResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your tasks. Please try again.');
       return;
     }
     if (rewardsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your rewards. Please try again.');
       return;
     }
     if (pointsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your points. Please try again.');
       return;
     }
     if (claimsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load contribution claims. Please try again.');
       return;

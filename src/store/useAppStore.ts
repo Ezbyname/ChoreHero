@@ -81,7 +81,11 @@ interface AppActions {
 
   // ── Hydration (AppDataBootstrap is the sole caller) ──────────────────────
   startHydrationRun(input: { runId: string; sequence: number }): void;
-  setAppHydrationState(state: AppHydrationState): void;
+  // resolvedForAuthUserId: pass the auth user this outcome resolves for on
+  // every terminal call (including failures), so a user whose hydration
+  // ends in an error is not permanently indistinguishable from "never
+  // attempted" — see AppDataBootstrap.tsx's shouldHydrate/userChanged.
+  setAppHydrationState(state: AppHydrationState, resolvedForAuthUserId?: string): void;
   setAppDataError(error: string | null): void;
   setAppDataErrorCode(code: AppDataErrorCode): void;
   commitHydrationSnapshot(input: {
@@ -287,11 +291,24 @@ export const useAppStore = create<AppStore>((set) => ({
 
   // When setting 'error', also clear loading so the UI is never stuck.
   // Other state transitions (idle → loading) are driven by startHydrationRun.
-  setAppHydrationState: (state) =>
-    set({
-      appHydrationState: state,
-      isAppDataLoading:  state === 'loading',
-    }),
+  //
+  // resolvedForAuthUserId, when passed, updates hydratedForAuthUserId even on
+  // a failure outcome. Previously only commitHydrationSnapshot's success path
+  // updated hydratedForAuthUserId, so any user whose hydration terminated in
+  // an error (missing_profile or any load_failed) left it permanently at its
+  // initial null — making userChanged (authUser.id !== hydratedForAuthUserId)
+  // unconditionally true forever for that user, which re-triggered hydration
+  // on every dependency change regardless of appHydrationState, producing an
+  // infinite retry loop. Confirmed via runtime instrumentation showing
+  // userChanged: true on every decision log for a user whose profile did not
+  // exist yet.
+  setAppHydrationState: (state, resolvedForAuthUserId) =>
+    set((s) => ({
+      appHydrationState:     state,
+      isAppDataLoading:      state === 'loading',
+      hydratedForAuthUserId:
+        resolvedForAuthUserId !== undefined ? resolvedForAuthUserId : s.hydratedForAuthUserId,
+    })),
 
   setAppDataError: (error) =>
     set({ appDataError: error }),
