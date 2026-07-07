@@ -112,6 +112,12 @@ export const copy = {
     signupCheckEmailTitle: 'Check your email',
     signupCheckEmail:      'We sent you a link to finish creating your account.',
 
+    // Landing state after clicking the email confirmation link itself —
+    // shown instead of booting the full app, since the real sign-in happens
+    // on whichever device the user actually uses ChoreHero from.
+    emailConfirmedTitle: 'Email confirmed!',
+    emailConfirmedBody:  'You can close this page now and sign in from the app.',
+
     // Settings / logout
     account:     'Account',
     signedInAs:  'Signed in as',
