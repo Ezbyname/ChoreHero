@@ -97,7 +97,27 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const canHydrateAppData =
     isAuthResolved && isAuthenticated && !!authUser && isSupabaseConfigured;
 
+  // TEMPORARY DIAGNOSTIC INSTRUMENTATION — remove once the stuck-loading
+  // report is resolved. instanceId is stable for the lifetime of one mount;
+  // a new value appearing in the console mid-session proves a remount.
+  const instanceId = useRef(Math.random().toString(36).slice(2, 8)).current;
+
   useEffect(() => {
+    console.log('[hydrate:mount]', instanceId);
+    return () => console.log('[hydrate:unmount]', instanceId);
+  }, [instanceId]);
+
+  useEffect(() => {
+    console.log('[hydrate:effect]', {
+      instanceId,
+      isAuthResolved,
+      isAuthenticated,
+      authUserId: authUser?.id,
+      canHydrateAppData,
+      appHydrationState,
+      hydratedForAuthUserId,
+    });
+
     if (!isAuthResolved) {
       return;
     }
@@ -134,6 +154,14 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     const shouldHydrate      =
       pendingHydrationRef.current || userChanged || notHydratedForUser;
 
+    console.log('[hydrate:decision]', {
+      instanceId,
+      userChanged,
+      notHydratedForUser,
+      pending: pendingHydrationRef.current,
+      shouldHydrate,
+    });
+
     if (!shouldHydrate) {
       return;
     }
@@ -144,12 +172,14 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     const sequence = hydrationSequenceRef.current + 1;
     hydrationSequenceRef.current = sequence;
 
+    console.log('[hydrate:startRun]', { instanceId, runId, sequence });
     startHydrationRun({ runId, sequence });
 
     const run = async () => {
       try {
         await hydrateForUser({ userId: authUser.id, runId, sequence });
-      } catch {
+      } catch (err) {
+        console.log('[hydrate:catch]', { instanceId, runId, sequence, err });
         if (hydrationSequenceRef.current === sequence) {
           setAppHydrationState('error');
           setAppDataErrorCode('load_failed');
@@ -179,9 +209,20 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     const profileResult = await getProfileById(userId);
 
+    console.log('[hydrate:profileResult]', {
+      instanceId,
+      runId,
+      sequence,
+      currentSequence: hydrationSequenceRef.current,
+      isStale: isStale(),
+      hasData: !!profileResult.data,
+      error: profileResult.error,
+    });
+
     if (isStale()) return;
 
     if (profileResult.error) {
+      console.log('[hydrate:setState]', { instanceId, runId, next: 'error/load_failed (profile error)' });
       setAppHydrationState('error');
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your profile. Please try again.');
@@ -191,6 +232,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (!profileResult.data) {
       // maybeSingle() returned null with no error — profile row does not exist.
       // Valid state for a new auth user. Surface as recovery UX (not a generic error).
+      console.log('[hydrate:setState]', { instanceId, runId, next: 'error/missing_profile' });
       setAppHydrationState('error');
       setAppDataErrorCode('missing_profile');
       setAppDataError('No ChoreHero profile found. Let\'s set one up.');
