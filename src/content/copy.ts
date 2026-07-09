@@ -55,6 +55,17 @@ export const copy = {
     needsAttention: 'Needs attention',
     points:         'pts',
   },
+  // User-facing labels for FamilyActivity.kind — never expose DB table names
+  // (e.g. "contribution_claims") in UI copy.
+  activityKinds: {
+    task:     'Task',
+    request:  'Family Request',
+    event:    'Event',
+    reminder: 'Reminder',
+  },
+  activityCard: {
+    completeAction: 'Complete',
+  },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',
     pendingBadge:        'Waiting for approval',

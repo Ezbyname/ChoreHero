@@ -33,7 +33,8 @@
     "web": "expo start --web",
     "build:web": "expo export -p web",
     "test:e2e": "playwright test",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "test:unit": "NODE_NO_WARNINGS=1 node --experimental-strip-types --import ./scripts/test/register.mjs --test src/**/__tests__/*.test.ts"
   },
   "private": true
 }
