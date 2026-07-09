@@ -120,6 +120,13 @@ export async function getHouseholdMember(
 //   - household.created_by_profile_id === ownerProfileId
 //   - member.role === 'owner'
 //   - no other households or members are created
+//
+// RLS note: the Step 1 insert's .select('*').single() relies on
+// households_select_member allowing created_by_profile_id = auth.uid() (see
+// 20260709000000_fix_households_select_on_create.sql) — at this point no
+// household_members row exists yet for this household, so a policy keyed
+// only on membership would make RETURNING come back empty and .single()
+// throw on every call.
 export async function createHouseholdWithOwner(input: {
   name:           string;
   ownerProfileId: string;
