@@ -1,5 +1,7 @@
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
@@ -7,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { FamilyAvatar } from '@/components/FamilyAvatar';
-import { ensureProfileExists } from '@/lib/repositories';
+import { ensureProfileExists, uploadProfileAvatarImage } from '@/lib/repositories';
 import { selectAuthUser } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
@@ -17,6 +19,12 @@ import { copy } from '@/content/copy';
 // create their profile with no avatar selected and get the initials fallback
 // (see FamilyAvatar) until they set one.
 const AVATAR_EMOJI_OPTIONS = ['😀', '😎', '🦸', '🐶', '🐱', '🦖', '🐸', '🌟', '⚽', '🎨', '🚀', '🌈'];
+
+function extensionFromMimeType(mimeType: string | undefined): string {
+  if (!mimeType) return 'jpg';
+  const subtype = mimeType.split('/')[1];
+  return subtype === 'jpeg' ? 'jpg' : (subtype ?? 'jpg');
+}
 
 /**
  * Recovery UX for authenticated users who have no ChoreHero profile yet.
@@ -37,9 +45,55 @@ export function ProfileSetupScreen() {
 
   const [displayName, setDisplayName] = useState('');
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  async function handlePickPhoto() {
+    if (isUploadingPhoto || isSubmitting || !authUser?.id) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality:    0.8,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    setPhotoError(null);
+    setIsUploadingPhoto(true);
+
+    try {
+      // asset.uri on web is a blob: URL — fetch() reads it back into a
+      // real Blob to hand to Supabase Storage's upload().
+      const response = await fetch(asset.uri);
+      const blob      = await response.blob();
+
+      const uploadResult = await uploadProfileAvatarImage({
+        authUserId:    authUser.id,
+        blob,
+        fileExtension: extensionFromMimeType(asset.mimeType),
+      });
+
+      if (uploadResult.error) {
+        setPhotoError(copy.profileSetup.uploadPhotoError);
+        return;
+      }
+
+      // A photo and an emoji are mutually exclusive in this picker —
+      // FamilyAvatar would render the photo first regardless, but keeping
+      // only one visibly "selected" avoids an ambiguous UI state.
+      setSelectedPhotoUrl(uploadResult.data);
+      setSelectedEmoji(null);
+    } catch {
+      setPhotoError(copy.profileSetup.uploadPhotoError);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  }
 
   async function handleCreate() {
     if (isSubmitting) return;
@@ -65,6 +119,7 @@ export function ProfileSetupScreen() {
       const result = await ensureProfileExists({
         authUserId:  authUser.id,
         displayName: trimmed,
+        avatarUrl:   selectedPhotoUrl,
         avatarEmoji: selectedEmoji,
       });
 
@@ -117,21 +172,49 @@ export function ProfileSetupScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>{copy.profileSetup.avatarLabel}</Text>
           <View style={styles.avatarRow}>
-            <FamilyAvatar name={displayName} avatarEmoji={selectedEmoji ?? undefined} size={48} />
-            <View style={styles.emojiGrid}>
-              {AVATAR_EMOJI_OPTIONS.map((emoji) => (
-                <TouchableOpacity
-                  key={emoji}
-                  style={[styles.emojiOption, selectedEmoji === emoji && styles.emojiOptionSelected]}
-                  onPress={() => setSelectedEmoji(emoji === selectedEmoji ? null : emoji)}
-                  disabled={isSubmitting}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.emojiOptionText}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
+            <FamilyAvatar
+              name={displayName}
+              avatarUrl={selectedPhotoUrl ?? undefined}
+              avatarEmoji={selectedEmoji ?? undefined}
+              size={48}
+            />
+            <View style={styles.avatarOptions}>
+              <TouchableOpacity
+                style={styles.uploadPhotoButton}
+                onPress={handlePickPhoto}
+                disabled={isUploadingPhoto || isSubmitting}
+                activeOpacity={0.7}
+              >
+                {isUploadingPhoto ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Text style={styles.uploadPhotoButtonText}>
+                    {selectedPhotoUrl ? copy.profileSetup.changePhotoButton : copy.profileSetup.uploadPhotoButton}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.emojiGrid}>
+                {AVATAR_EMOJI_OPTIONS.map((emoji) => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[styles.emojiOption, selectedEmoji === emoji && styles.emojiOptionSelected]}
+                    onPress={() => {
+                      setSelectedEmoji(emoji === selectedEmoji ? null : emoji);
+                      setSelectedPhotoUrl(null);
+                    }}
+                    disabled={isSubmitting}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.emojiOptionText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </View>
+          {photoError ? (
+            <Text style={styles.validationText}>{photoError}</Text>
+          ) : null}
         </View>
 
         {submitError ? (
@@ -198,11 +281,27 @@ const styles = StyleSheet.create({
   },
   avatarRow: {
     flexDirection: 'row',
-    alignItems:    'center',
+    alignItems:    'flex-start',
     gap:           spacing.md,
   },
+  avatarOptions: {
+    flex: 1,
+    gap:  spacing.sm,
+  },
+  uploadPhotoButton: {
+    alignSelf:         'flex-start',
+    borderRadius:      8,
+    borderWidth:       1,
+    borderColor:       colors.borderSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.xs,
+  },
+  uploadPhotoButtonText: {
+    ...typography.caption,
+    color:      colors.primary,
+    fontWeight: '600',
+  },
   emojiGrid: {
-    flex:          1,
     flexDirection: 'row',
     flexWrap:      'wrap',
     gap:           spacing.xs,
