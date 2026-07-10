@@ -146,6 +146,11 @@ export async function createHouseholdWithOwner(input: {
   if (householdError) return { data: null, error: householdError };
 
   // Step 2: register the creator as the owner member.
+  // RLS note: this insert's .select('*').single() has the identical shape of
+  // issue as Step 1 — household_members_select_member needs
+  // profile_id = auth.uid() (see 20260710010000_fix_household_members_select_on_create.sql),
+  // because the row being inserted right now isn't visible to the
+  // is_household_member self-lookup from this statement's own snapshot.
   const { data: member, error: memberError } = await supabase
     .from('household_members')
     .insert({
