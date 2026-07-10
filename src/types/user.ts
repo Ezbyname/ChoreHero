@@ -3,8 +3,9 @@
 export type UserRole = 'owner' | 'admin' | 'adult' | 'member' | 'child';
 
 export interface AppUser {
-  id:        string;
-  name:      string;
-  email?:    string;
-  avatarUrl?: string;
+  id:           string;
+  name:         string;
+  email?:       string;
+  avatarUrl?:   string;
+  avatarEmoji?: string;
 }

@@ -24,6 +24,10 @@ export interface HydrationContext {
   profile:           ProfileRow;
   household:         HouseholdRow | null;
   householdMembers:  HouseholdMemberRow[];
+  // Profiles for every householdMembers row (name, avatar_url, avatar_emoji).
+  // Fetched separately from householdMembers since household_members has no
+  // embedded profile join in the repository layer yet.
+  memberProfiles:     ProfileRow[];
   tasks:              TaskRow[];
   rewards:            RewardRow[];
   pointsBalances:     PointsBalanceRow[];

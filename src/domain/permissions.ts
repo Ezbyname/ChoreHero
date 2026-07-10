@@ -33,6 +33,8 @@ export type HouseholdPermission =
   | 'tasks.create'                // create new tasks
   | 'tasks.assign'                // assign tasks to household members
   | 'tasks.complete'              // mark tasks complete
+  | 'tasks.claim_open'            // claim an unassigned open task for self only —
+                                   // never assigning to, or on behalf of, anyone else
 
   // Rewards
   | 'rewards.create'              // create or edit rewards
@@ -52,6 +54,7 @@ export type HouseholdPermission =
 
 const CHILD_PERMISSIONS: readonly HouseholdPermission[] = [
   'tasks.complete',
+  'tasks.claim_open',
   'rewards.redeem',
   'contributions.claim_completed',   // children can submit claims, but cannot self-approve
 ];

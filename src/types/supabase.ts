@@ -87,6 +87,7 @@ export interface Database {
           id:                   string;       // uuid; 1:1 with auth.users.id
           display_name:         string;
           avatar_url:           string | null;
+          avatar_emoji:         string | null;
           default_household_id: string | null; // uuid; FK → households.id
           created_at:           string;
           updated_at:           string;
@@ -95,6 +96,7 @@ export interface Database {
           id:                    string;       // required: must match auth.uid()
           display_name:          string;
           avatar_url?:           string | null;
+          avatar_emoji?:         string | null;
           default_household_id?: string | null;
           created_at?:           string;
           updated_at?:           string;
@@ -103,6 +105,7 @@ export interface Database {
           id?:                   string;
           display_name?:         string;
           avatar_url?:           string | null;
+          avatar_emoji?:         string | null;
           default_household_id?: string | null;
           updated_at?:           string;
         };
@@ -463,9 +466,58 @@ export interface Database {
         };
         Relationships: [];
       };
+      // ----------------------------------------------------------
+      // household_invites
+      // Shareable join codes. Redemption goes through the
+      // redeem_household_invite RPC, never a direct table write.
+      // ----------------------------------------------------------
+      household_invites: {
+        Row: {
+          id:                    string;
+          household_id:          string;
+          code:                  string;
+          role:                  HouseholdMemberRole;
+          created_by_profile_id: string;
+          redemption_count:      number;
+          revoked_at:            string | null;
+          expires_at:            string;
+          created_at:            string;
+        };
+        Insert: {
+          id?:                    string;
+          household_id:           string;
+          code:                   string;
+          role?:                  HouseholdMemberRole;
+          created_by_profile_id:  string;
+          redemption_count?:      number;
+          revoked_at?:            string | null;
+          expires_at?:            string;
+          created_at?:            string;
+        };
+        Update: {
+          id?:         string;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
-    Views:          Record<string, never>;
-    Functions:      Record<string, never>;
+    Views: Record<string, never>;
+    Functions: {
+      redeem_household_invite: {
+        Args: {
+          p_code:         string;
+          p_display_name: string;
+          p_avatar_emoji?: string | null;
+        };
+        Returns: string; // household_id
+      };
+      claim_open_task: {
+        Args: {
+          p_task_id: string;
+        };
+        Returns: Database['public']['Tables']['tasks']['Row'];
+      };
+    };
     CompositeTypes: Record<string, never>;
     Enums: {
       household_member_role:    HouseholdMemberRole;
@@ -500,3 +552,4 @@ export type PointTransactionRow = Database['public']['Tables']['point_transactio
 export type ServiceRequestRow   = Database['public']['Tables']['service_requests']['Row'];
 export type TaskHelpRequestRow  = Database['public']['Tables']['task_help_requests']['Row'];
 export type ContributionClaimRow = Database['public']['Tables']['contribution_claims']['Row'];
+export type HouseholdInviteRow   = Database['public']['Tables']['household_invites']['Row'];

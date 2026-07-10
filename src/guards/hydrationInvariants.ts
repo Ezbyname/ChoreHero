@@ -97,6 +97,9 @@ export function assertValidHydrationContext(context: HydrationContext): void {
   if (!Array.isArray(context.householdMembers)) {
     throw new Error('HydrationContext: householdMembers must be an array.');
   }
+  if (!Array.isArray(context.memberProfiles)) {
+    throw new Error('HydrationContext: memberProfiles must be an array.');
+  }
 
   // Cross-entity household consistency:
   // Every domain row must belong to the active household.
@@ -146,6 +149,19 @@ export function assertValidHydrationContext(context: HydrationContext): void {
       throw new Error(
         `HydrationContext: householdMember "${member.id}" has household_id "${member.household_id}", ` +
         `expected "${hid}".`,
+      );
+    }
+  }
+
+  // memberProfiles has no household_id of its own — instead, every profile
+  // must correspond to one of this household's members. Guards against a
+  // stray profile from an unrelated fetch leaking into the snapshot.
+  const memberProfileIds = new Set(context.householdMembers.map((m) => m.profile_id));
+  for (const profile of context.memberProfiles) {
+    if (!memberProfileIds.has(profile.id)) {
+      throw new Error(
+        `HydrationContext: memberProfile "${profile.id}" does not correspond to any ` +
+        `householdMembers row for household "${hid}".`,
       );
     }
   }
@@ -203,6 +219,11 @@ export function assertPartialHydrationContext(context: HydrationContext): void {
   if (context.contributionClaims.length !== 0) {
     throw new Error(
       'PartialHydrationContext: contributionClaims must be empty when hasNoHousehold is true.',
+    );
+  }
+  if (context.memberProfiles.length !== 0) {
+    throw new Error(
+      'PartialHydrationContext: memberProfiles must be empty when hasNoHousehold is true.',
     );
   }
 }

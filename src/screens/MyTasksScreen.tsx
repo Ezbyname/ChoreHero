@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
-import { getMemberNameByUserId } from '@/features/household/householdUtils';
+import { TaskAdapter } from '@/domain/adapters';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -25,6 +25,7 @@ export function MyTasksScreen() {
     () => (user ? getTasksForUser(tasks, user.id) : []),
     [tasks, user],
   );
+  const myActivities = useMemo(() => myTasks.map(TaskAdapter.toFamilyActivity), [myTasks]);
 
   return (
     <Screen style={styles.screen}>
@@ -42,13 +43,7 @@ export function MyTasksScreen() {
         >
           <Text style={styles.summary}>{copy.myTasks.summary}</Text>
 
-          {myTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              assigneeName={getMemberNameByUserId(members, task.assigneeId)}
-            />
-          ))}
+          <ActivityList activities={myActivities} members={members} />
         </ScrollView>
       )}
     </Screen>

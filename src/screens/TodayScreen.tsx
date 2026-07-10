@@ -1,15 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { ContributionClaimCard } from '@/components/ContributionClaimCard';
+import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { TaskCard } from '@/components/TaskCard';
 import { copy } from '@/content/copy';
+import { ContributionClaimAdapter, TaskAdapter } from '@/domain/adapters';
+import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
-import { getMemberNameByUserId } from '@/features/household/householdUtils';
+import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -73,55 +74,33 @@ interface ReviewSectionProps {
 }
 
 function ContributionReviewSection({ claims, members, householdId, role, reviewerId }: ReviewSectionProps) {
-  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
 
-  async function handleApprove(claimId: string) {
-    if (pendingActionId) return;
-    setPendingActionId(claimId);
-    await approveContributionClaim({ claimId, householdId, role, reviewedByProfileId: reviewerId });
-    setPendingActionId(null);
-  }
+  const activities = useMemo(
+    () => claims.map(ContributionClaimAdapter.toFamilyActivity),
+    [claims],
+  );
 
-  async function handleReject(claimId: string) {
-    if (pendingActionId) return;
-    setPendingActionId(claimId);
-    await rejectContributionClaim({ claimId, householdId, role, reviewedByProfileId: reviewerId });
-    setPendingActionId(null);
+  async function handleAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingActivityId) return;
+    setPendingActivityId(activity.id);
+    if (action === 'approve') {
+      await approveContributionClaim({ claimId: activity.id, householdId, role, reviewedByProfileId: reviewerId });
+    } else if (action === 'decline') {
+      await rejectContributionClaim({ claimId: activity.id, householdId, role, reviewedByProfileId: reviewerId });
+    }
+    setPendingActivityId(null);
   }
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{copy.contributionClaims.reviewSectionTitle}</Text>
-      {claims.map((claim) => (
-        <ContributionClaimCard
-          key={claim.id}
-          claim={claim}
-          claimantName={getMemberNameByUserId(members, claim.claimedByProfileId)}
-        >
-          <View style={styles.reviewActions}>
-            <TouchableOpacity
-              style={[styles.reviewButton, styles.rejectButton]}
-              onPress={() => handleReject(claim.id)}
-              disabled={pendingActionId === claim.id}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.rejectButtonText}>{copy.contributionClaims.rejectButton}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.reviewButton, styles.approveButton]}
-              onPress={() => handleApprove(claim.id)}
-              disabled={pendingActionId === claim.id}
-              activeOpacity={0.8}
-            >
-              {pendingActionId === claim.id ? (
-                <ActivityIndicator size="small" color={colors.surface} />
-              ) : (
-                <Text style={styles.approveButtonText}>{copy.contributionClaims.approveButton}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </ContributionClaimCard>
-      ))}
+      <ActivityList
+        activities={activities}
+        members={members}
+        onAction={handleAction}
+        pendingActivityId={pendingActivityId}
+      />
     </View>
   );
 }
@@ -201,6 +180,35 @@ export function TodayScreen() {
 
   const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
+  const todayActivities = useMemo(() => todayTasks.map(TaskAdapter.toFamilyActivity), [todayTasks]);
+
+  const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
+  const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
+
+  // Only 'claim' is wired here — 'complete' has no shipped mutation yet
+  // (see TaskAdapter), so it's a no-op if it ever arrives.
+  async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingTaskActivityId || action !== 'claim' || !household || !user) return;
+
+    setPendingTaskActivityId(activity.id);
+    setTaskActionFeedback(null);
+
+    const result = await claimOpenTask({
+      taskId:      activity.id,
+      householdId: household.id,
+      profileId:   user.id,
+      role,
+    });
+
+    if (!result.ok) {
+      setTaskActionFeedback(
+        result.reason === 'already_claimed'
+          ? copy.activityCard.alreadyClaimed
+          : copy.activityCard.claimError,
+      );
+    }
+    setPendingTaskActivityId(null);
+  }
 
   return (
     <Screen style={styles.screen}>
@@ -235,13 +243,13 @@ export function TodayScreen() {
               </View>
             )}
 
-            {todayTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                assigneeName={getMemberNameByUserId(members, task.assigneeId)}
-              />
-            ))}
+            <ActivityList
+              activities={todayActivities}
+              members={members}
+              onAction={handleTaskAction}
+              pendingActivityId={pendingTaskActivityId}
+            />
+            {taskActionFeedback && <Text style={styles.claimFeedback}>{taskActionFeedback}</Text>}
           </>
         )}
 
@@ -288,36 +296,6 @@ const styles = StyleSheet.create({
     color:        colors.textPrimary,
     fontWeight:   '600',
     marginBottom: spacing.md,
-  },
-  reviewActions: {
-    flexDirection: 'row',
-    gap:           spacing.sm,
-    marginTop:     spacing.md,
-  },
-  reviewButton: {
-    flex:            1,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-    justifyContent:  'center',
-  },
-  rejectButton: {
-    backgroundColor: colors.background,
-    borderWidth:     1,
-    borderColor:     colors.borderSoft,
-  },
-  rejectButtonText: {
-    ...typography.caption,
-    color:      colors.textSecondary,
-    fontWeight: '600',
-  },
-  approveButton: {
-    backgroundColor: colors.primary,
-  },
-  approveButtonText: {
-    ...typography.caption,
-    color:      colors.surface,
-    fontWeight: '600',
   },
   claimRow: {
     flexDirection: 'row',

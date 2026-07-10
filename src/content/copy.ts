@@ -55,6 +55,20 @@ export const copy = {
     needsAttention: 'Needs attention',
     points:         'pts',
   },
+  // User-facing labels for FamilyActivity.kind — never expose DB table names
+  // (e.g. "contribution_claims") in UI copy.
+  activityKinds: {
+    task:     'Task',
+    request:  'Family Request',
+    event:    'Event',
+    reminder: 'Reminder',
+  },
+  activityCard: {
+    completeAction: 'Complete',
+    claimAction:    'I\'ll do this',
+    claimError:     'We couldn\'t claim that — please try again.',
+    alreadyClaimed: 'Someone already took this one.',
+  },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',
     pendingBadge:        'Waiting for approval',
@@ -112,6 +126,12 @@ export const copy = {
     signupCheckEmailTitle: 'Check your email',
     signupCheckEmail:      'We sent you a link to finish creating your account.',
 
+    // Landing state after clicking the email confirmation link itself —
+    // shown instead of booting the full app, since the real sign-in happens
+    // on whichever device the user actually uses ChoreHero from.
+    emailConfirmedTitle: 'Email confirmed!',
+    emailConfirmedBody:  'You can close this page now and sign in from the app.',
+
     // Settings / logout
     account:     'Account',
     signedInAs:  'Signed in as',
@@ -124,6 +144,10 @@ export const copy = {
     body:             'This is the name your family will see inside ChoreHero.',
     fieldLabel:       'Display name',
     fieldPlaceholder: 'Your name',
+    avatarLabel:        'Pick an avatar (optional)',
+    uploadPhotoButton:  'Upload photo',
+    changePhotoButton:  'Change photo',
+    uploadPhotoError:   'We couldn\'t upload that photo. Please try again.',
     button:           'Create profile',
     buttonLoading:    'Creating your profile…',
     validationEmpty:  'Please enter a display name.',

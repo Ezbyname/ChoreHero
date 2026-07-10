@@ -62,6 +62,10 @@ interface AppActions {
   setUser:               (user: AppUser | null) => void;
   setHousehold:          (household: Household | null) => void;
   setTasks:              (tasks: Task[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors
+  // setContributionClaimRows below. Used by feature functions to refresh
+  // the tasks slice after a single mutation, without a full re-hydration.
+  setTaskRows:           (rows: TaskRow[]) => void;
   setRewards:            (rewards: Reward[]) => void;
   setPointsBalances:     (balances: PointsBalance[]) => void;
   setContributionClaims: (claims: ContributionClaim[]) => void;
@@ -81,7 +85,11 @@ interface AppActions {
 
   // ── Hydration (AppDataBootstrap is the sole caller) ──────────────────────
   startHydrationRun(input: { runId: string; sequence: number }): void;
-  setAppHydrationState(state: AppHydrationState): void;
+  // resolvedForAuthUserId: pass the auth user this outcome resolves for on
+  // every terminal call (including failures), so a user whose hydration
+  // ends in an error is not permanently indistinguishable from "never
+  // attempted" — see AppDataBootstrap.tsx's shouldHydrate/userChanged.
+  setAppHydrationState(state: AppHydrationState, resolvedForAuthUserId?: string): void;
   setAppDataError(error: string | null): void;
   setAppDataErrorCode(code: AppDataErrorCode): void;
   commitHydrationSnapshot(input: {
@@ -143,17 +151,25 @@ function mapMemberRole(role: HouseholdMemberRole): UserRole {
 }
 
 function mapHouseholdMembers(
-  rows: HydrationContext['householdMembers'],
+  rows:     HydrationContext['householdMembers'],
+  profiles: HydrationContext['memberProfiles'],
 ): HouseholdMember[] {
-  return rows.map((m) => ({
-    id:        m.id,
-    userId:    m.profile_id,
-    // display_name_override is set per household; full name requires a profile join.
-    // Profile joins are deferred — T1.4.7 resolves names from available data only.
-    name:      m.display_name_override ?? m.profile_id,
-    role:      mapMemberRole(m.role),
-    avatarUrl: undefined,
-  }));
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  return rows.map((m) => {
+    const profile = profileById.get(m.profile_id);
+    return {
+      id:          m.id,
+      userId:      m.profile_id,
+      // display_name_override (per-household nickname) wins if set;
+      // otherwise fall back to the profile's own name, then the raw id
+      // if the profile fetch failed or the profile hasn't loaded.
+      name:        m.display_name_override ?? profile?.display_name ?? m.profile_id,
+      role:        mapMemberRole(m.role),
+      avatarUrl:   profile?.avatar_url ?? undefined,
+      avatarEmoji: profile?.avatar_emoji ?? undefined,
+    };
+  });
 }
 
 function mapTaskRow(t: TaskRow): Task {
@@ -219,6 +235,7 @@ export const useAppStore = create<AppStore>((set) => ({
   setUser:               (user)      => set({ user }),
   setHousehold:          (household) => set({ household }),
   setTasks:              (tasks)     => set({ tasks }),
+  setTaskRows:           (rows)      => set({ tasks: rows.map(mapTaskRow) }),
   setRewards:            (rewards)   => set({ rewards }),
   setPointsBalances:     (balances)  => set({ pointsBalances: balances }),
   setContributionClaims: (claims)    => set({ contributionClaims: claims }),
@@ -279,11 +296,24 @@ export const useAppStore = create<AppStore>((set) => ({
 
   // When setting 'error', also clear loading so the UI is never stuck.
   // Other state transitions (idle → loading) are driven by startHydrationRun.
-  setAppHydrationState: (state) =>
-    set({
-      appHydrationState: state,
-      isAppDataLoading:  state === 'loading',
-    }),
+  //
+  // resolvedForAuthUserId, when passed, updates hydratedForAuthUserId even on
+  // a failure outcome. Previously only commitHydrationSnapshot's success path
+  // updated hydratedForAuthUserId, so any user whose hydration terminated in
+  // an error (missing_profile or any load_failed) left it permanently at its
+  // initial null — making userChanged (authUser.id !== hydratedForAuthUserId)
+  // unconditionally true forever for that user, which re-triggered hydration
+  // on every dependency change regardless of appHydrationState, producing an
+  // infinite retry loop. Confirmed via runtime instrumentation showing
+  // userChanged: true on every decision log for a user whose profile did not
+  // exist yet.
+  setAppHydrationState: (state, resolvedForAuthUserId) =>
+    set((s) => ({
+      appHydrationState:     state,
+      isAppDataLoading:      state === 'loading',
+      hydratedForAuthUserId:
+        resolvedForAuthUserId !== undefined ? resolvedForAuthUserId : s.hydratedForAuthUserId,
+    })),
 
   setAppDataError: (error) =>
     set({ appDataError: error }),
@@ -332,9 +362,10 @@ export const useAppStore = create<AppStore>((set) => ({
       const isPartial = context.hasNoHousehold;
 
       const user: AppUser = {
-        id:        context.profile.id,
-        name:      context.profile.display_name,
-        avatarUrl: context.profile.avatar_url ?? undefined,
+        id:          context.profile.id,
+        name:        context.profile.display_name,
+        avatarUrl:   context.profile.avatar_url ?? undefined,
+        avatarEmoji: context.profile.avatar_emoji ?? undefined,
         // email comes from authUser; not stored in profiles table
       };
 
@@ -342,7 +373,7 @@ export const useAppStore = create<AppStore>((set) => ({
         ? {
             id:      context.household.id,
             name:    context.household.name,
-            members: mapHouseholdMembers(context.householdMembers),
+            members: mapHouseholdMembers(context.householdMembers, context.memberProfiles),
           }
         : null;
 

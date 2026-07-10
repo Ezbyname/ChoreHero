@@ -6,6 +6,7 @@ export interface HouseholdMember {
   name: string;
   role: UserRole;
   avatarUrl?: string;
+  avatarEmoji?: string;
 }
 
 export interface Household {

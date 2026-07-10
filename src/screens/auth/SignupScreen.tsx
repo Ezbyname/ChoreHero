@@ -262,11 +262,12 @@ const styles = StyleSheet.create({
     color: '#B91C1C',
   },
   button: {
-    backgroundColor: colors.primary,
-    borderRadius:    12,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginTop:       spacing.sm,
+    backgroundColor:   colors.primary,
+    borderRadius:      12,
+    paddingVertical:   spacing.md,
+    paddingHorizontal: spacing.xl,
+    alignItems:        'center',
+    marginTop:         spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.6,

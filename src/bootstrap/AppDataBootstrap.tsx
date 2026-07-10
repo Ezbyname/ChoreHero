@@ -10,6 +10,7 @@ import {
 } from '@/store/selectors';
 import {
   getProfileById,
+  getProfilesByIds,
   getHouseholdsForProfile,
   getHouseholdMembers,
   getTasksForHousehold,
@@ -71,6 +72,13 @@ function resolveActiveHousehold(
  * AppDataBootstrap is the sole caller of hydration store actions.
  * requestAppDataHydrationRetry() resets state to idle so this bootstrap
  * re-triggers the pipeline for the same auth user (used by ProfileSetupScreen).
+ *
+ * Every terminal setAppHydrationState call (success or failure) passes the
+ * resolved auth user id — see useAppStore.ts's setAppHydrationState comment.
+ * Omitting it on a failure path previously left hydratedForAuthUserId stuck
+ * at its initial null for any user whose hydration ended in an error, making
+ * shouldHydrate's userChanged check unconditionally true forever and
+ * producing an infinite retry loop independent of appHydrationState.
  */
 export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
   const isAuthResolved  = useAppStore(selectIsAuthResolved);
@@ -117,8 +125,19 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     // canHydrateAppData is true — evaluate whether to trigger a run.
     // 'idle' covers both initial state and post-retry state set by
     // requestAppDataHydrationRetry (called after ProfileSetupScreen succeeds).
+    //
+    // 'error' is deliberately NOT included here. appHydrationState is itself
+    // a dependency of this effect, so if 'error' were treated as "needs a
+    // run," every failed hydration would immediately re-trigger itself the
+    // instant setAppHydrationState('error') committed — an uncontrolled
+    // infinite loop (loading -> error -> loading -> ...) with no terminal
+    // state, since 'loading' is set synchronously at the start of every
+    // iteration while 'error' only appears after the async round trip
+    // resolves. 'error' is a terminal state by design; only an explicit
+    // requestAppDataHydrationRetry() call (which resets to 'idle') may
+    // re-trigger hydration after a failure.
     const userChanged        = authUser.id !== hydratedForAuthUserId;
-    const notHydratedForUser = appHydrationState === 'idle' || appHydrationState === 'error';
+    const notHydratedForUser = appHydrationState === 'idle';
     const shouldHydrate      =
       pendingHydrationRef.current || userChanged || notHydratedForUser;
 
@@ -139,7 +158,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
         await hydrateForUser({ userId: authUser.id, runId, sequence });
       } catch {
         if (hydrationSequenceRef.current === sequence) {
-          setAppHydrationState('error');
+          setAppHydrationState('error', authUser.id);
           setAppDataErrorCode('load_failed');
           setAppDataError('An unexpected error occurred. Please try again.');
         }
@@ -170,7 +189,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (isStale()) return;
 
     if (profileResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your profile. Please try again.');
       return;
@@ -179,7 +198,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (!profileResult.data) {
       // maybeSingle() returned null with no error — profile row does not exist.
       // Valid state for a new auth user. Surface as recovery UX (not a generic error).
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('missing_profile');
       setAppDataError('No ChoreHero profile found. Let\'s set one up.');
       return;
@@ -195,7 +214,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (isStale()) return;
 
     if (householdsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your household. Please try again.');
       return;
@@ -211,6 +230,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
         profile,
         household:          null,
         householdMembers:   [],
+        memberProfiles:     [],
         tasks:              [],
         rewards:            [],
         pointsBalances:     [],
@@ -235,40 +255,51 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
     if (isStale()) return;
 
     if (membersResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your household members. Please try again.');
       return;
     }
     if (tasksResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your tasks. Please try again.');
       return;
     }
     if (rewardsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your rewards. Please try again.');
       return;
     }
     if (pointsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load your points. Please try again.');
       return;
     }
     if (claimsResult.error) {
-      setAppHydrationState('error');
+      setAppHydrationState('error', userId);
       setAppDataErrorCode('load_failed');
       setAppDataError('We couldn\'t load contribution claims. Please try again.');
       return;
     }
 
+    // Separate follow-up fetch: depends on membersResult's profile_ids, so it
+    // cannot join the Promise.all above. Failure here degrades to empty
+    // profiles (names fall back to profile_id in the mapper) rather than a
+    // full hydration error — member display is not critical-path.
+    const memberProfilesResult = await getProfilesByIds(
+      membersResult.data.map((m) => m.profile_id),
+    );
+
+    if (isStale()) return;
+
     const context: HydrationContext = {
       profile,
       household:          activeHousehold,
       householdMembers:   membersResult.data,
+      memberProfiles:     memberProfilesResult.data ?? [],
       tasks:              tasksResult.data,
       rewards:            rewardsResult.data,
       pointsBalances:     pointsResult.data,
