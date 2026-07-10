@@ -227,7 +227,16 @@ function mapContributionClaimRow(c: ContributionClaimRow): ContributionClaim {
 // STORE
 // ============================================================
 
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>((rawSet) => {
+  const set: typeof rawSet = (...args) => {
+    console.trace(
+      '[zustand set]',
+      typeof args[0] === 'function' ? '(updater fn)' : args[0],
+    );
+    return rawSet(...(args as Parameters<typeof rawSet>));
+  };
+
+  return {
   ...initialState,
 
   // ── App data actions ─────────────────────────────────────────────────────
@@ -444,4 +453,5 @@ export const useAppStore = create<AppStore>((set) => ({
       hydratedForAuthUserId: null,
       hydrationRunId:        null,
     }),
-}));
+  };
+});
