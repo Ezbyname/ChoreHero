@@ -511,6 +511,12 @@ export interface Database {
         };
         Returns: string; // household_id
       };
+      claim_open_task: {
+        Args: {
+          p_task_id: string;
+        };
+        Returns: Database['public']['Tables']['tasks']['Row'];
+      };
     };
     CompositeTypes: Record<string, never>;
     Enums: {

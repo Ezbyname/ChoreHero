@@ -66,6 +66,22 @@ export async function getTasksForAssignee(
   return { data: data ?? [], error: null };
 }
 
+// Calls the claim_open_task RPC (SECURITY DEFINER — see
+// supabase/migrations/20260710000000_claim_open_task.sql). The RPC derives
+// the claimant from auth.uid() itself; this function never sends a target
+// profile id. On failure, error.code is 'CH001' specifically when someone
+// else already claimed the task first — every other code is a generic
+// failure, mapped by the caller (see src/features/tasks/claimOpenTask.ts).
+export async function claimOpenTask(
+  taskId: string,
+): Promise<RepositoryResult<TaskRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.rpc('claim_open_task', { p_task_id: taskId });
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
 export async function getTasksForHouseholdByStatus(
   householdId: string,
   status: TaskStatus,

@@ -65,6 +65,9 @@ export const copy = {
   },
   activityCard: {
     completeAction: 'Complete',
+    claimAction:    'I\'ll do this',
+    claimError:     'We couldn\'t claim that — please try again.',
+    alreadyClaimed: 'Someone already took this one.',
   },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',

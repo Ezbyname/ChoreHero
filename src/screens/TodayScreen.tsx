@@ -10,6 +10,7 @@ import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
+import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -181,6 +182,34 @@ export function TodayScreen() {
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
   const todayActivities = useMemo(() => todayTasks.map(TaskAdapter.toFamilyActivity), [todayTasks]);
 
+  const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
+  const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
+
+  // Only 'claim' is wired here — 'complete' has no shipped mutation yet
+  // (see TaskAdapter), so it's a no-op if it ever arrives.
+  async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingTaskActivityId || action !== 'claim' || !household || !user) return;
+
+    setPendingTaskActivityId(activity.id);
+    setTaskActionFeedback(null);
+
+    const result = await claimOpenTask({
+      taskId:      activity.id,
+      householdId: household.id,
+      profileId:   user.id,
+      role,
+    });
+
+    if (!result.ok) {
+      setTaskActionFeedback(
+        result.reason === 'already_claimed'
+          ? copy.activityCard.alreadyClaimed
+          : copy.activityCard.claimError,
+      );
+    }
+    setPendingTaskActivityId(null);
+  }
+
   return (
     <Screen style={styles.screen}>
       <ScreenHeader
@@ -214,7 +243,13 @@ export function TodayScreen() {
               </View>
             )}
 
-            <ActivityList activities={todayActivities} members={members} />
+            <ActivityList
+              activities={todayActivities}
+              members={members}
+              onAction={handleTaskAction}
+              pendingActivityId={pendingTaskActivityId}
+            />
+            {taskActionFeedback && <Text style={styles.claimFeedback}>{taskActionFeedback}</Text>}
           </>
         )}
 

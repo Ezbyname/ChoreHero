@@ -6,6 +6,7 @@ import { colors, radius, shadows, spacing, typography } from '@/theme';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 
 const ACTION_LABELS: Record<ActivityAction, string> = {
+  claim:    copy.activityCard.claimAction,
   complete: copy.activityCard.completeAction,
   approve:  copy.contributionClaims.approveButton,
   decline:  copy.contributionClaims.rejectButton,

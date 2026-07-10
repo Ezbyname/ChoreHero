@@ -13,9 +13,15 @@ const STATUS_MAP: Record<TaskStatus, FamilyActivity['status']> = {
   completed:       'completed',
 };
 
+function availableActionsFor(task: Task): ActivityAction[] {
+  if (task.status === 'completed') return [];
+  if (!task.assigneeId) return ['claim'];
+  return ['complete'];
+}
+
 export const TaskAdapter = {
   toFamilyActivity(task: Task): FamilyActivity {
-    const availableActions: ActivityAction[] = task.status === 'completed' ? [] : ['complete'];
+    const availableActions = availableActionsFor(task);
 
     return {
       id:                 task.id,

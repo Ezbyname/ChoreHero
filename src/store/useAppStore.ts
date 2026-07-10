@@ -62,6 +62,10 @@ interface AppActions {
   setUser:               (user: AppUser | null) => void;
   setHousehold:          (household: Household | null) => void;
   setTasks:              (tasks: Task[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors
+  // setContributionClaimRows below. Used by feature functions to refresh
+  // the tasks slice after a single mutation, without a full re-hydration.
+  setTaskRows:           (rows: TaskRow[]) => void;
   setRewards:            (rewards: Reward[]) => void;
   setPointsBalances:     (balances: PointsBalance[]) => void;
   setContributionClaims: (claims: ContributionClaim[]) => void;
@@ -231,6 +235,7 @@ export const useAppStore = create<AppStore>((set) => ({
   setUser:               (user)      => set({ user }),
   setHousehold:          (household) => set({ household }),
   setTasks:              (tasks)     => set({ tasks }),
+  setTaskRows:           (rows)      => set({ tasks: rows.map(mapTaskRow) }),
   setRewards:            (rewards)   => set({ rewards }),
   setPointsBalances:     (balances)  => set({ pointsBalances: balances }),
   setContributionClaims: (claims)    => set({ contributionClaims: claims }),

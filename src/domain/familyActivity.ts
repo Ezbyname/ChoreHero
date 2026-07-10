@@ -18,7 +18,10 @@ export type ActivityStatus =
 // for chores in early design discussion) has no corresponding status/feature
 // yet, so it is deliberately not modeled — matches the "don't add unused
 // scaffolding" precedent already set by the RLS migrations.
-export type ActivityAction = 'complete' | 'approve' | 'decline';
+// 'complete' has no wired mutation yet either (see TaskAdapter) — it stays
+// in the union because the shape is correct, but no screen supplies an
+// onAction handler for it, so ActivityCard renders no button for it today.
+export type ActivityAction = 'claim' | 'complete' | 'approve' | 'decline';
 
 // createdByProfileId / targetProfileId are raw ids, not embedded user
 // objects — display-name/avatar resolution stays a render-time concern via
