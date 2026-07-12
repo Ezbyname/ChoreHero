@@ -195,6 +195,18 @@ export const copy = {
     revokeError:  'We couldn\'t revoke that invite. Please try again.',
     empty:        'No active invites yet.',
   },
+  createTask: {
+    title:            'Create a task',
+    fieldPlaceholder: 'What needs to get done?',
+    validationEmpty:  'Please enter a task title.',
+    assigneeLabel:    'Assign to',
+    openToAnyone:     'Open to anyone',
+    pointsLabel:      'Points (optional)',
+    pointsPlaceholder: '0',
+    button:           'Create task',
+    success:          'Task created.',
+    error:            'We couldn\'t create that task. Please try again.',
+  },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',
     network: 'Connection seems a little shaky. Check your internet and try again.',
