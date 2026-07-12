@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { createHouseholdWithOwner, joinHouseholdById } from '@/lib/repositories';
-import { selectAuthUser } from '@/store/selectors';
+import { createHouseholdWithOwner, redeemHouseholdInvite } from '@/lib/repositories';
+import { selectAuthUser, selectCurrentUser } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, spacing, typography } from '@/theme';
 import { copy } from '@/content/copy';
@@ -19,12 +19,11 @@ type Mode = 'create' | 'join';
  *
  * Two modes, toggled by tab buttons:
  *   create — create a new household (T1.5.3 behavior, unchanged)
- *   join   — join an existing household by code (T1.5.4)
- *
- * Join identifier: household.id is used as the join code in this foundation.
- * No invite_code column exists in the T1.4.4 schema. This is intentional
- * foundation behavior. A dedicated invite system is a follow-up ticket.
- * Copy uses neutral "Household code" to avoid exposing this detail in the UI.
+ *   join   — join an existing household via an invite code, through the
+ *            redeem_household_invite RPC (T1.9.1 invite system — this
+ *            screen previously used household.id as the join code, per
+ *            that migration's own comment marking it a stopgap pending a
+ *            "dedicated invite system," which now exists and is wired here).
  *
  * Architecture boundaries (both modes):
  *   - Reads auth user id from store (selectAuthUser).
@@ -39,6 +38,11 @@ type Mode = 'create' | 'join';
  */
 export function HouseholdSetupScreen() {
   const authUser                     = useAppStore(selectAuthUser);
+  // Reused as p_display_name for redeem_household_invite — the profile
+  // already exists in this screen's state (hasNoHousehold, not
+  // missing_profile), so the RPC's ON CONFLICT DO NOTHING leaves it
+  // untouched; this is only ever the value actually sent.
+  const currentUser                  = useAppStore(selectCurrentUser);
   const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
 
   const [mode, setMode] = useState<Mode>('create');
@@ -107,12 +111,15 @@ export function HouseholdSetupScreen() {
   async function handleJoin() {
     if (joinSubmitting) return;
 
-    const trimmed = householdCode.trim();
+    // Invite codes are generated uppercase-only (CODE_ALPHABET in
+    // householdInvites.ts); redemption does an exact match, so normalize
+    // here rather than silently failing on a lowercase paste/type.
+    const trimmed = householdCode.trim().toUpperCase();
     if (!trimmed) {
       setJoinValidation(copy.householdJoin.validationEmpty);
       return;
     }
-    if (!authUser?.id) {
+    if (!authUser?.id || !currentUser?.name) {
       setJoinError(copy.householdJoin.error);
       return;
     }
@@ -122,9 +129,10 @@ export function HouseholdSetupScreen() {
     setJoinSubmitting(true);
 
     try {
-      const result = await joinHouseholdById({
-        householdId: trimmed,
-        profileId:   authUser.id,
+      const result = await redeemHouseholdInvite({
+        code:        trimmed,
+        displayName: currentUser.name,
+        avatarEmoji: currentUser.avatarEmoji ?? null,
       });
 
       if (result.error) {
@@ -240,7 +248,7 @@ export function HouseholdSetupScreen() {
                 placeholder={copy.householdJoin.fieldPlaceholder}
                 placeholderTextColor={colors.textMuted}
                 autoFocus
-                autoCapitalize="none"
+                autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="done"
                 onSubmitEditing={handleJoin}
