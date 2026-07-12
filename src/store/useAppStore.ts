@@ -227,21 +227,7 @@ function mapContributionClaimRow(c: ContributionClaimRow): ContributionClaim {
 // STORE
 // ============================================================
 
-export const useAppStore = create<AppStore>((rawSet) => {
-  // TEMPORARY — diagnostic instrumentation only, not a behavior change.
-  // Traces every store mutation (every action below calls `set`, now routed
-  // through here) to find which one is firing repeatedly after hydration.
-  // Remove this wrapper once the render-loop cause is identified.
-  const set: typeof rawSet = (...args) => {
-    // eslint-disable-next-line no-console
-    console.trace(
-      '[zustand set]',
-      typeof args[0] === 'function' ? '(updater fn)' : args[0],
-    );
-    return rawSet(...(args as Parameters<typeof rawSet>));
-  };
-
-  return {
+export const useAppStore = create<AppStore>((set) => ({
   ...initialState,
 
   // ── App data actions ─────────────────────────────────────────────────────
@@ -458,5 +444,4 @@ export const useAppStore = create<AppStore>((rawSet) => {
       hydratedForAuthUserId: null,
       hydrationRunId:        null,
     }),
-  };
-});
+}));

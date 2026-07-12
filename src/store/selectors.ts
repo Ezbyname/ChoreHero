@@ -146,6 +146,22 @@ export const selectCanRejectContributionClaim = (s: AppStore): boolean =>
 
 export const selectContributionClaims = (s: AppStore) => s.contributionClaims;
 
+// ── DO NOT call these three directly via useAppStore(...) from a component ──
+//
+// Each allocates a new array on every call. Passed straight to useAppStore,
+// that new-reference-every-render defeats useSyncExternalStore's snapshot
+// comparison — React sees "the store changed" on every check, re-renders,
+// gets another new array, and never converges, throwing React error #185
+// ("Maximum update depth exceeded") with no effect and no direct setState
+// anywhere involved. Confirmed: this is exactly what took down TodayScreen
+// in production on every real hydration.
+//
+// Safe uses: composing into another selector that reduces to a primitive
+// (as selectPendingContributionClaimCount does below), or calling from a
+// component via selectContributionClaims (stable) + a local useMemo filter
+// (see TodayScreen.tsx's pendingClaims). Never useAppStore(thisSelector)
+// directly.
+
 // Household-wide claims still awaiting review — feeds the parent review section.
 export const selectPendingContributionClaims = (s: AppStore) =>
   s.contributionClaims.filter((c) => c.status === 'pending');
