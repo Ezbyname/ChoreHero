@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { copy } from '@/content/copy';
+import { HouseholdInvitesSection } from '@/features/household/components/HouseholdInvitesSection';
 import { signOut } from '@/services/supabase/auth';
 import {
   selectAuthUserEmail,
+  selectCanInviteMembers,
+  selectCurrentHousehold,
+  selectCurrentMemberRole,
+  selectCurrentUser,
   selectIsAuthenticated,
   selectActiveHouseholdName,
   selectHasActiveHousehold,
@@ -34,6 +39,10 @@ export function SettingsScreen() {
   const currentUserName      = useAppStore(selectCurrentUserName);
   const activeHouseholdName  = useAppStore(selectActiveHouseholdName);
   const hasActiveHousehold   = useAppStore(selectHasActiveHousehold);
+  const household             = useAppStore(selectCurrentHousehold);
+  const user                  = useAppStore(selectCurrentUser);
+  const role                  = useAppStore(selectCurrentMemberRole);
+  const canInviteMembers      = useAppStore(selectCanInviteMembers);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [localError,   setLocalError]   = useState<string | null>(null);
@@ -65,54 +74,65 @@ export function SettingsScreen() {
         subtitle={copy.screens.settings.subtitle}
       />
 
-      {/* ── Household section ─────────────────────────────────────────────── */}
-      {hasActiveHousehold && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {copy.settingsScreen.householdSection}
-          </Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoValue}>
-              {activeHouseholdName ?? copy.settingsScreen.noHousehold}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* ── Household section ─────────────────────────────────────────────── */}
+        {hasActiveHousehold && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {copy.settingsScreen.householdSection}
             </Text>
-          </View>
-        </View>
-      )}
-
-      {/* ── Account section ───────────────────────────────────────────────── */}
-      {isAuthenticated && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{copy.auth.account}</Text>
-
-          {(currentUserName || authUserEmail) ? (
             <View style={styles.infoRow}>
-              {currentUserName ? (
-                <Text style={styles.infoValue}>{currentUserName}</Text>
-              ) : null}
-              {authUserEmail ? (
-                <Text style={styles.infoLabel}>{authUserEmail}</Text>
-              ) : null}
+              <Text style={styles.infoValue}>
+                {activeHouseholdName ?? copy.settingsScreen.noHousehold}
+              </Text>
             </View>
-          ) : null}
+          </View>
+        )}
 
-          {localError ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{localError}</Text>
-            </View>
-          ) : null}
+        {/* ── Invite members (owner/admin only) ─────────────────────────────── */}
+        {canInviteMembers && household && user && (
+          <HouseholdInvitesSection
+            householdId={household.id}
+            createdByProfileId={user.id}
+            role={role}
+          />
+        )}
 
-          <TouchableOpacity
-            style={[styles.signOutButton, isSigningOut && styles.buttonDisabled]}
-            onPress={handleSignOut}
-            disabled={isSigningOut}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.signOutText}>
-              {isSigningOut ? copy.auth.signingOut : copy.auth.signOut}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* ── Account section ───────────────────────────────────────────────── */}
+        {isAuthenticated && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{copy.auth.account}</Text>
+
+            {(currentUserName || authUserEmail) ? (
+              <View style={styles.infoRow}>
+                {currentUserName ? (
+                  <Text style={styles.infoValue}>{currentUserName}</Text>
+                ) : null}
+                {authUserEmail ? (
+                  <Text style={styles.infoLabel}>{authUserEmail}</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {localError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{localError}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.signOutButton, isSigningOut && styles.buttonDisabled]}
+              onPress={handleSignOut}
+              disabled={isSigningOut}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.signOutText}>
+                {isSigningOut ? copy.auth.signingOut : copy.auth.signOut}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
     </Screen>
   );
 }

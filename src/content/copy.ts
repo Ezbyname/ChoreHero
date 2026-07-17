@@ -170,15 +170,42 @@ export const copy = {
 
     // Join form
     title:            'Join a family space',
-    body:             'Enter the code shared by your household organizer.',
-    fieldLabel:       'Household code',
-    fieldPlaceholder: 'Paste code here',
+    body:             'Enter the invite code shared by your household organizer.',
+    fieldLabel:       'Invite code',
+    fieldPlaceholder: 'e.g. AB3DEFGH',
     button:           'Join household',
     buttonLoading:    'Joining your family space…',
-    validationEmpty:  'Please enter a household code.',
-    // Shown for not-found, RLS failure, or any controlled join error.
-    // Raw Supabase/SQL messages are never shown.
-    error:            'We couldn\'t join that household. Please check the code and try again.',
+    validationEmpty:  'Please enter an invite code.',
+    // Shown for not-found, expired, revoked, or any controlled redemption
+    // error. Raw Supabase/SQL messages are never shown.
+    error:            'We couldn\'t join with that code. Please check it and try again.',
+  },
+  householdInvites: {
+    title:        'Invite family members',
+    body:         'Generate a code and share it however you like — WhatsApp, text, in person.',
+    roleLabels: {
+      owner: 'Owner',
+      admin: 'Admin',
+      adult: 'Adult',
+      child: 'Child',
+    },
+    createButton: 'Generate invite',
+    createError:  'We couldn\'t create that invite. Please try again.',
+    revokeButton: 'Revoke',
+    revokeError:  'We couldn\'t revoke that invite. Please try again.',
+    empty:        'No active invites yet.',
+  },
+  createTask: {
+    title:            'Create a task',
+    fieldPlaceholder: 'What needs to get done?',
+    validationEmpty:  'Please enter a task title.',
+    assigneeLabel:    'Assign to',
+    openToAnyone:     'Open to anyone',
+    pointsLabel:      'Points (optional)',
+    pointsPlaceholder: '0',
+    button:           'Create task',
+    success:          'Task created.',
+    error:            'We couldn\'t create that task. Please try again.',
   },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',

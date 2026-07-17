@@ -18,11 +18,11 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanClaimContribution,
+  selectContributionClaims,
   selectCurrentHousehold,
   selectCurrentMemberRole,
   selectCurrentUser,
   selectHasPendingContributionClaimsToReview,
-  selectPendingContributionClaims,
   selectTasks,
 } from '@/store/selectors';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -173,10 +173,24 @@ export function TodayScreen() {
   const household     = useAppStore(selectCurrentHousehold);
   const user           = useAppStore(selectCurrentUser);
   const role            = useAppStore(selectCurrentMemberRole);
-  const pendingClaims    = useAppStore(selectPendingContributionClaims);
+  const contributionClaims = useAppStore(selectContributionClaims);
   const hasReviewSection = useAppStore(selectHasPendingContributionClaimsToReview);
   const canClaim          = useAppStore(selectCanClaimContribution);
   const members   = household?.members ?? [];
+
+  // selectContributionClaims returns the raw, stable store array; filtering
+  // must happen here (memoized), not inside a Zustand selector. A selector
+  // that returns a freshly-.filter()'d array on every call (as
+  // selectPendingContributionClaims used to, called directly here) never
+  // produces a referentially-stable snapshot for useSyncExternalStore to
+  // compare against — React treats every re-render as "the store changed
+  // again," re-renders, gets another new array, and never converges. This
+  // is what threw "Maximum update depth exceeded" (React error #185) on
+  // every real hydration, with no effect and no direct setState involved.
+  const pendingClaims = useMemo(
+    () => contributionClaims.filter((c) => c.status === 'pending'),
+    [contributionClaims],
+  );
 
   const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);

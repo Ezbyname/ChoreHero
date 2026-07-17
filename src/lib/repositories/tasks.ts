@@ -82,6 +82,41 @@ export async function claimOpenTask(
   return { data, error: null };
 }
 
+// Creates a task. assigneeProfileId omitted/null => an Open Task (claimable
+// via claim_open_task later). assigned_by_profile_id is only set when an
+// assignee is chosen at creation time — matches "who assigned this,"
+// distinct from created_by_profile_id ("who wrote it"), which stay equal
+// today since this app has no reassignment flow yet.
+export async function insertTask(input: {
+  householdId:         string;
+  title:               string;
+  description?:        string;
+  createdByProfileId:  string;
+  assigneeProfileId?:  string | null;
+  dueAt?:              string | null;
+  points?:             number;
+}): Promise<RepositoryResult<TaskRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .insert({
+      household_id:           input.householdId,
+      title:                   input.title,
+      description:             input.description ?? null,
+      created_by_profile_id:   input.createdByProfileId,
+      assigned_by_profile_id:  input.assigneeProfileId ? input.createdByProfileId : null,
+      assignee_profile_id:     input.assigneeProfileId ?? null,
+      due_at:                  input.dueAt ?? null,
+      points:                  input.points ?? 0,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
 export async function getTasksForHouseholdByStatus(
   householdId: string,
   status: TaskStatus,
