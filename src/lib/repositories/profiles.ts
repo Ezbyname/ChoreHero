@@ -104,7 +104,6 @@ export async function uploadProfileAvatarImage(input: {
   const { error: uploadError } = await supabase.storage
     .from('avatars')
     .upload(path, input.blob, {
-      upsert:      true,
       contentType: input.blob.type || undefined,
     });
 
