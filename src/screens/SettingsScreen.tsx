@@ -68,7 +68,7 @@ export function SettingsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen style={styles.screen}>
       <ScreenHeader
         title={copy.screens.settings.title}
         subtitle={copy.screens.settings.subtitle}
@@ -138,6 +138,9 @@ export function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    paddingHorizontal: 0,
+  },
   section: {
     marginTop:         spacing.lg,
     paddingHorizontal: spacing.xl,
