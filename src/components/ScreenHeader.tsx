@@ -18,9 +18,10 @@ export function ScreenHeader({ title, subtitle }: ScreenHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop:    spacing.lg,
-    paddingBottom: spacing.md,
-  },
+  paddingHorizontal: spacing.xl,
+  paddingTop:        spacing.lg,
+  paddingBottom:     spacing.md,
+},
   title: {
     ...typography.title,
     color: colors.textPrimary,
