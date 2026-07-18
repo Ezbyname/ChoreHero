@@ -57,7 +57,7 @@ Each permission string names one UI or domain capability.
 | `tasks.create`                   |  ✓    |  ✓    |  ✓    |       |
 | `tasks.assign`                   |  ✓    |  ✓    |  ✓    |       |
 | `tasks.complete`                 |  ✓    |  ✓    |  ✓    |  ✓    |
-| `rewards.create`                 |  ✓    |  ✓    |       |       |
+| `rewards.create`                 |  ✓    |  ✓    |  ✓    |       |
 | `rewards.redeem`                 |  ✓    |  ✓    |  ✓    |  ✓    |
 | `requests.approve`               |  ✓    |  ✓    |       |       |
 | `contributions.create_completed` |  ✓    |  ✓    |  ✓    |       |
@@ -165,6 +165,46 @@ if (role === 'admin' || role === 'owner') { ... }
 const canManage = useAppStore(selectCanManageHousehold);
 const canCreate = useAppStore(selectCanCreateTasks);
 ```
+## Approval boundary — privileged roles vs review-required actions
+
+Approval is a review mechanism, not a general permission check.
+
+Permissions decide whether a member is allowed to perform an action.
+Approval decides whether a submitted child/member action should be accepted by a trusted household role.
+
+Privileged household roles (`owner`, `admin`, `adult`) do not need approval for their own management actions.
+
+Examples of actions that do **not** require approval:
+
+| Action | Reason |
+|---|---|
+| Adult creates a task | Adult is a trusted household manager |
+| Adult assigns a task to a child | Assignment is a management action |
+| Adult completes their own task | Privileged-role completion does not require review |
+| Admin creates a reward | Reward creation is a management action |
+| Owner manages household members | Owner is the top household authority |
+
+Approval is reserved for child/member-submitted or review-required actions.
+
+Examples of actions that **do** require approval:
+
+| Action | Reason |
+|---|---|
+| Child marks a task as completed | Adult should verify completion before final approval |
+| Member submits a contribution claim | Claim must be reviewed before points are awarded |
+| Child requests reward redemption | Adult must approve before points are deducted and the reward is granted |
+
+Implementation guardrail:
+
+Do not introduce approval gates for `owner`, `admin`, or `adult` management actions unless the product explicitly changes this rule.
+
+In particular:
+
+- creating a task by an adult/admin/owner must not require approval
+- assigning a task by an adult/admin/owner must not require approval
+- completing a task by an adult/admin/owner must not require approval
+- creating a reward by an adult/admin/owner must not require approval
+- reward redemption approval applies to the child/member request, not to reward creation itself
 
 ---
 
