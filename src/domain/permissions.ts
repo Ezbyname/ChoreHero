@@ -62,6 +62,7 @@ const CHILD_PERMISSIONS: readonly HouseholdPermission[] = [
 const ADULT_PERMISSIONS: readonly HouseholdPermission[] = [
   ...CHILD_PERMISSIONS,
   'tasks.create',
+  'rewards.create',
   'tasks.assign',
   'contributions.create_completed',  // adults can report completed contributions
   'contributions.approve_claim',     // adults can approve contribution claims
@@ -72,7 +73,6 @@ const ADMIN_PERMISSIONS: readonly HouseholdPermission[] = [
   ...ADULT_PERMISSIONS,
   'household.invite',
   'members.manage',
-  'rewards.create',
   'requests.approve',
 ];
 
