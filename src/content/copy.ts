@@ -64,10 +64,13 @@ export const copy = {
     reminder: 'Reminder',
   },
   activityCard: {
-    completeAction: 'Complete',
-    claimAction:    'I\'ll do this',
-    claimError:     'We couldn\'t claim that — please try again.',
-    alreadyClaimed: 'Someone already took this one.',
+    completeAction:      'Complete',
+    claimAction:         'I\'ll do this',
+    claimError:          'We couldn\'t claim that — please try again.',
+    alreadyClaimed:      'Someone already took this one.',
+    completeNotAllowed:  'You cannot complete this task directly.',
+    completeNotOpen:     'This task isn\'t available to complete right now.',
+    completeError:       'We couldn\'t complete that — please try again.',
   },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',
