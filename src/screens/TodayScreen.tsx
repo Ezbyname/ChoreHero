@@ -11,6 +11,7 @@ import { approveContributionClaim } from '@/features/contributions/approveContri
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
+import { completeTask } from '@/features/tasks/completeTask';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -199,28 +200,53 @@ export function TodayScreen() {
   const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
 
-  // Only 'claim' is wired here — 'complete' has no shipped mutation yet
-  // (see TaskAdapter), so it's a no-op if it ever arrives.
+  // 'claim' and 'complete' are wired here. 'complete' is privileged direct
+  // completion only (EX-05: owner/admin/adult, open -> completed, no
+  // review step) — a child's attempt is rejected by completeTask with
+  // 'not_authorized' and surfaced via the same feedback mechanism as any
+  // other failure, not silently ignored. Child-initiated completion
+  // requests (open -> needs_attention) are a distinct EX-06 flow, not
+  // handled here.
   async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
-    if (pendingTaskActivityId || action !== 'claim' || !household || !user) return;
+    if (pendingTaskActivityId || !household || !user) return;
+    if (action !== 'claim' && action !== 'complete') return;
 
     setPendingTaskActivityId(activity.id);
     setTaskActionFeedback(null);
 
-    const result = await claimOpenTask({
-      taskId:      activity.id,
-      householdId: household.id,
-      profileId:   user.id,
-      role,
-    });
+    if (action === 'claim') {
+      const result = await claimOpenTask({
+        taskId:      activity.id,
+        householdId: household.id,
+        profileId:   user.id,
+        role,
+      });
 
-    if (!result.ok) {
-      setTaskActionFeedback(
-        result.reason === 'already_claimed'
-          ? copy.activityCard.alreadyClaimed
-          : copy.activityCard.claimError,
-      );
+      if (!result.ok) {
+        setTaskActionFeedback(
+          result.reason === 'already_claimed'
+            ? copy.activityCard.alreadyClaimed
+            : copy.activityCard.claimError,
+        );
+      }
+    } else {
+      const result = await completeTask({
+        taskId:      activity.id,
+        householdId: household.id,
+        role,
+      });
+
+      if (!result.ok) {
+        setTaskActionFeedback(
+          result.reason === 'not_authorized'
+            ? copy.activityCard.completeNotAllowed
+            : result.reason === 'not_open'
+              ? copy.activityCard.completeNotOpen
+              : copy.activityCard.completeError,
+        );
+      }
     }
+
     setPendingTaskActivityId(null);
   }
 

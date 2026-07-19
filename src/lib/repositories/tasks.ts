@@ -82,6 +82,23 @@ export async function claimOpenTask(
   return { data, error: null };
 }
 
+// Calls the complete_task RPC (SECURITY DEFINER — see
+// supabase/migrations/20260718000000_complete_task.sql). Privileged
+// (owner/admin/adult) direct completion only — the RPC derives the caller
+// from auth.uid() itself; this function never sends a target profile id.
+// On failure, error.code is 'CH002' specifically when the task was not
+// 'open' at the moment of the update — every other code is a generic
+// failure, mapped by the caller (see src/features/tasks/completeTask.ts).
+export async function completeTask(
+  taskId: string,
+): Promise<RepositoryResult<TaskRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.rpc('complete_task', { p_task_id: taskId });
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
 // Creates a task. assigneeProfileId omitted/null => an Open Task (claimable
 // via claim_open_task later). assigned_by_profile_id is only set when an
 // assignee is chosen at creation time — matches "who assigned this,"
