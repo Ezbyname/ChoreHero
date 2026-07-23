@@ -71,6 +71,12 @@ export const copy = {
     completeNotAllowed:  'You cannot complete this task directly.',
     completeNotOpen:     'This task isn\'t available to complete right now.',
     completeError:       'We couldn\'t complete that — please try again.',
+    // Child completion request (EX-06) — distinct from the EX-05 keys
+    // above: those are written for the privileged direct-completion
+    // rejection; these cover the child's own request-for-review action.
+    requestNotAllowed:   'You can only request completion for tasks assigned to you.',
+    requestNotOpen:      'This task isn\'t available to request completion for right now.',
+    requestError:        'We couldn\'t send that for review — please try again.',
   },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',

@@ -12,6 +12,7 @@ import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
+import { requestTaskCompletion } from '@/features/tasks/requestTaskCompletion';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -200,13 +201,16 @@ export function TodayScreen() {
   const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
 
-  // 'claim' and 'complete' are wired here. 'complete' is privileged direct
-  // completion only (EX-05: owner/admin/adult, open -> completed, no
-  // review step) — a child's attempt is rejected by completeTask with
-  // 'not_authorized' and surfaced via the same feedback mechanism as any
-  // other failure, not silently ignored. Child-initiated completion
-  // requests (open -> needs_attention) are a distinct EX-06 flow, not
-  // handled here.
+  // 'claim' and 'complete' are wired here. The 'complete' action branches
+  // by role: privileged (owner/admin/adult) direct completion (EX-05,
+  // open -> completed, no review step) via completeTask; child completion
+  // request (EX-06, open -> needs_attention, subject to EX-07 approval)
+  // via requestTaskCompletion. Both reject a mismatched caller with
+  // 'not_authorized' and surface it via the same feedback mechanism as
+  // any other failure, not silently ignored — completeTask still defends
+  // against a child reaching it directly, and requestTaskCompletion still
+  // defends against a privileged role or wrong-assignee child reaching it,
+  // independent of this role-based routing.
   async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
     if (pendingTaskActivityId || !household || !user) return;
     if (action !== 'claim' && action !== 'complete') return;
@@ -227,6 +231,23 @@ export function TodayScreen() {
           result.reason === 'already_claimed'
             ? copy.activityCard.alreadyClaimed
             : copy.activityCard.claimError,
+        );
+      }
+    } else if (role === 'child') {
+      const result = await requestTaskCompletion({
+        taskId:      activity.id,
+        householdId: household.id,
+        profileId:   user.id,
+        role,
+      });
+
+      if (!result.ok) {
+        setTaskActionFeedback(
+          result.reason === 'not_authorized'
+            ? copy.activityCard.requestNotAllowed
+            : result.reason === 'not_open'
+              ? copy.activityCard.requestNotOpen
+              : copy.activityCard.requestError,
         );
       }
     } else {
