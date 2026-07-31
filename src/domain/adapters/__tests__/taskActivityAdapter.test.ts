@@ -38,6 +38,11 @@ test('carries over assignee/creator/points/dueAt', () => {
   assert.equal(activity.dueAt, '2026-07-09T10:00:00.000Z');
 });
 
+test('a needs_attention task exposes approve and decline actions', () => {
+  const activity = TaskAdapter.toFamilyActivity(makeTask({ status: 'needs_attention', assigneeId: 'child-1' }));
+  assert.deepEqual(activity.availableActions, ['approve', 'decline']);
+});
+
 test('completed tasks expose no actions, whether or not still assigned', () => {
   assert.deepEqual(TaskAdapter.toFamilyActivity(makeTask({ status: 'completed' })).availableActions, []);
   assert.deepEqual(

@@ -78,6 +78,15 @@ export const copy = {
     requestNotOpen:      'This task isn\'t available to request completion for right now.',
     requestError:        'We couldn\'t send that for review — please try again.',
   },
+  taskReview: {
+    // Parent approval/rejection of a child's completion request (EX-07) —
+    // distinct copy from contributionClaims below, since these review a
+    // different underlying record (tasks.status, not contribution_claims).
+    reviewSectionTitle: 'Waiting for your review',
+    approveError:        'We couldn\'t approve that — please try again.',
+    rejectError:         'We couldn\'t send that back — please try again.',
+    notPending:          'This task has already been reviewed.',
+  },
   contributionClaims: {
     reviewSectionTitle: 'Waiting for your approval',
     pendingBadge:        'Waiting for approval',

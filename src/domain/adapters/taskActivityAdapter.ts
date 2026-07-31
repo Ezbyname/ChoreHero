@@ -13,8 +13,19 @@ const STATUS_MAP: Record<TaskStatus, FamilyActivity['status']> = {
   completed:       'completed',
 };
 
+// Viewer-agnostic, matching ContributionClaimAdapter's own unconditional
+// pending -> ['approve','decline'] mapping. This adapter has no actor/role
+// context (see taskActivityAdapter's existing pattern for 'complete'), so
+// callers that render a needs_attention task to a non-privileged viewer
+// (e.g. the submitting child seeing their own task in the general Today
+// list) are responsible for filtering 'approve'/'decline' out before
+// rendering — see TodayScreen.tsx's todayActivities composition. The
+// privileged-only review section applies no such filter, matching how
+// ContributionReviewSection also never filters ContributionClaimAdapter's
+// output (it's gated to privileged viewers before rendering at all).
 function availableActionsFor(task: Task): ActivityAction[] {
   if (task.status === 'completed') return [];
+  if (task.status === 'needs_attention') return ['approve', 'decline'];
   if (!task.assigneeId) return ['claim'];
   return ['complete'];
 }

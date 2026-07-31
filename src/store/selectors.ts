@@ -118,6 +118,12 @@ export const selectCanCreateTasks = (s: AppStore): boolean =>
 export const selectCanAssignTasks = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'tasks.assign');
 
+export const selectCanApproveTaskCompletion = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'tasks.approve_completion');
+
+export const selectCanRejectTaskCompletion = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'tasks.reject_completion');
+
 // Rewards
 export const selectCanCreateRewards = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.create');
