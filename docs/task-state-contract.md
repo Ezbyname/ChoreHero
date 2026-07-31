@@ -190,28 +190,26 @@ check has already passed.
 ## 11. Terminal, Retry, and Idempotency Rules
 
 - `completed` is terminal. Reopening a completed task is explicitly out of scope for EX-05/06/07.
-- Double-approve / double-reject: the existing `contribution_claims` RLS pattern is the template to follow —
-  `contribution_claims_update_review` (`supabase/migrations/20260704000000_contribution_claims_rls.sql:130-150`)
-  scopes its `USING` clause to `status = 'pending'` only, so a second
-  approve/reject attempt on an already-reviewed row is invisible to the
-  policy and fails at the database level, not just the UI. EX-07's RLS
-  should mirror this exactly: `USING (status = 'needs_attention')` on the
-  review UPDATE.
+- Double-approve / double-reject: idempotency is enforced through the
+  authoritative server-side mutation boundary defined for EX-07.
+  RLS provides defense-in-depth protection and is not the primary mutation
+  contract. Repeated approve/reject attempts against an already-reviewed task
+  must not apply duplicate state transitions.
 - Double-submit (child clicking "mark done" twice): the same pattern applies
   from the other side — the completion-request UPDATE should be scoped to
   `USING (status = 'open')`, so a second submission attempt on an
   already-`needs_attention` task is rejected by RLS, not silently
   duplicated.
-- **Recommendation (documented, not implemented here)**: `completed_by_profile_id`
-  should represent the person who performed the work, not necessarily the
+- **Contract rule for EX-07:** `completed_by_profile_id`
+  represents the person who performed the work, not necessarily the
   adult who approved it.
   - Adult/admin/owner directly completes their own task → their own profile id.
   - Child submits a completion request and an adult approves it → the
     **child's** profile id, not the approving adult's.
-  - If approval-reviewer tracking is separately required (e.g. "who
-    approved this"), EX-07 should decide whether a dedicated
-    review/approval field is needed rather than repurposing
-    `completed_by_profile_id` for that — not implemented or decided here.
+  - Approval-reviewer identity (who approved this) is not tracked by this
+    field, and no separate field (e.g. `approved_by_profile_id`) is
+    introduced by EX-07. Reviewer persistence, if ever required, is a
+    distinct future decision, not part of this contract.
 
 ---
 
