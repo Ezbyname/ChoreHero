@@ -529,6 +529,18 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
       };
+      approve_task_completion: {
+        Args: {
+          p_task_id: string;
+        };
+        Returns: Database['public']['Tables']['tasks']['Row'];
+      };
+      reject_task_completion: {
+        Args: {
+          p_task_id: string;
+        };
+        Returns: Database['public']['Tables']['tasks']['Row'];
+      };
     };
     CompositeTypes: Record<string, never>;
     Enums: {

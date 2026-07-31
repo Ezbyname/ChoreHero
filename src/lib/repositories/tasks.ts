@@ -118,6 +118,44 @@ export async function requestTaskCompletion(
   return { data, error: null };
 }
 
+// Calls the approve_task_completion RPC (SECURITY DEFINER — see
+// supabase/migrations/20260801000000_approve_reject_task_completion.sql).
+// Privileged (owner/admin/adult) review of a child completion request
+// only — the RPC derives the caller from auth.uid() itself and writes
+// completed_by_profile_id from the task's own assignee_profile_id, never
+// from the caller; this function never sends a target profile id. On
+// failure, error.code is 'CH004' specifically when the task was not
+// 'needs_attention' at the moment of the update — every other code is a
+// generic failure, mapped by the caller (see
+// src/features/tasks/approveTaskCompletion.ts).
+export async function approveTaskCompletion(
+  taskId: string,
+): Promise<RepositoryResult<TaskRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.rpc('approve_task_completion', { p_task_id: taskId });
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
+// Calls the reject_task_completion RPC (SECURITY DEFINER — see
+// supabase/migrations/20260801000000_approve_reject_task_completion.sql).
+// Privileged (owner/admin/adult) rejection of a child completion request
+// only — the RPC derives the caller from auth.uid() itself; this function
+// never sends a target profile id. On failure, error.code is 'CH005'
+// specifically when the task was not 'needs_attention' at the moment of
+// the update — every other code is a generic failure, mapped by the
+// caller (see src/features/tasks/rejectTaskCompletion.ts).
+export async function rejectTaskCompletion(
+  taskId: string,
+): Promise<RepositoryResult<TaskRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.rpc('reject_task_completion', { p_task_id: taskId });
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
 // Creates a task. assigneeProfileId omitted/null => an Open Task (claimable
 // via claim_open_task later). assigned_by_profile_id is only set when an
 // assignee is chosen at creation time — matches "who assigned this,"

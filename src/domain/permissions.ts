@@ -35,6 +35,8 @@ export type HouseholdPermission =
   | 'tasks.complete'              // mark tasks complete
   | 'tasks.claim_open'            // claim an unassigned open task for self only —
                                    // never assigning to, or on behalf of, anyone else
+  | 'tasks.approve_completion'    // approve a child's completion request (EX-07)
+  | 'tasks.reject_completion'     // reject a child's completion request (EX-07)
 
   // Rewards
   | 'rewards.create'              // create or edit rewards
@@ -67,6 +69,8 @@ const ADULT_PERMISSIONS: readonly HouseholdPermission[] = [
   'contributions.create_completed',  // adults can report completed contributions
   'contributions.approve_claim',     // adults can approve contribution claims
   'contributions.reject_claim',      // adults can reject contribution claims
+  'tasks.approve_completion',        // adults can approve a child's completion request
+  'tasks.reject_completion',         // adults can reject a child's completion request
 ];
 
 const ADMIN_PERMISSIONS: readonly HouseholdPermission[] = [

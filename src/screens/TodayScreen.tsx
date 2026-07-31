@@ -10,8 +10,10 @@ import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
+import { approveTaskCompletion } from '@/features/tasks/approveTaskCompletion';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
+import { rejectTaskCompletion } from '@/features/tasks/rejectTaskCompletion';
 import { requestTaskCompletion } from '@/features/tasks/requestTaskCompletion';
 import {
   getTasksNeedingAttention,
@@ -19,6 +21,7 @@ import {
 } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
 import {
+  selectCanApproveTaskCompletion,
   selectCanClaimContribution,
   selectContributionClaims,
   selectCurrentHousehold,
@@ -107,6 +110,68 @@ function ContributionReviewSection({ claims, members, householdId, role, reviewe
   );
 }
 
+// ── Task review section (parent flow, EX-07) ──────────────────────────────────
+// Reviews tasks.status = 'needs_attention' directly — a different
+// underlying record from ContributionReviewSection above, per the
+// contract's "alongside the existing contribution-claims review section,
+// extend not replace" instruction. approve_task_completion/
+// reject_task_completion remain the authoritative mutation boundary;
+// this section only calls them and reflects the result.
+
+interface TaskReviewSectionProps {
+  tasks:       Task[];
+  members:     HouseholdMember[];
+  householdId: string;
+  role:        string | null;
+}
+
+function TaskReviewSection({ tasks, members, householdId, role }: TaskReviewSectionProps) {
+  const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
+  const [feedback, setFeedback]                   = useState<string | null>(null);
+
+  const activities = useMemo(
+    () => tasks.map(TaskAdapter.toFamilyActivity),
+    [tasks],
+  );
+
+  async function handleAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingActivityId) return;
+    if (action !== 'approve' && action !== 'decline') return;
+
+    setPendingActivityId(activity.id);
+    setFeedback(null);
+
+    const result = action === 'approve'
+      ? await approveTaskCompletion({ taskId: activity.id, householdId, role })
+      : await rejectTaskCompletion({ taskId: activity.id, householdId, role });
+
+    if (!result.ok) {
+      setFeedback(
+        result.reason === 'not_pending'
+          ? copy.taskReview.notPending
+          : action === 'approve'
+            ? copy.taskReview.approveError
+            : copy.taskReview.rejectError,
+      );
+    }
+
+    setPendingActivityId(null);
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{copy.taskReview.reviewSectionTitle}</Text>
+      <ActivityList
+        activities={activities}
+        members={members}
+        onAction={handleAction}
+        pendingActivityId={pendingActivityId}
+      />
+      {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+    </View>
+  );
+}
+
 // ── Contribution claim submission (child flow) ────────────────────────────────
 
 interface ClaimFormProps {
@@ -178,6 +243,7 @@ export function TodayScreen() {
   const contributionClaims = useAppStore(selectContributionClaims);
   const hasReviewSection = useAppStore(selectHasPendingContributionClaimsToReview);
   const canClaim          = useAppStore(selectCanClaimContribution);
+  const canApproveTaskCompletion = useAppStore(selectCanApproveTaskCompletion);
   const members   = household?.members ?? [];
 
   // selectContributionClaims returns the raw, stable store array; filtering
@@ -196,7 +262,26 @@ export function TodayScreen() {
 
   const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
   const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
-  const todayActivities = useMemo(() => todayTasks.map(TaskAdapter.toFamilyActivity), [todayTasks]);
+
+  // Only a privileged (owner/admin/adult) viewer may see 'approve'/'decline'
+  // on a needs_attention task here — otherwise the submitting child (or any
+  // other non-privileged viewer) would see review actions on their own or
+  // a sibling's pending submission in the general Today list. TaskAdapter
+  // itself is viewer-agnostic (see its own comment), so this filter is the
+  // minimal, adapter-signature-preserving mechanism identified during
+  // planning — the dedicated TaskReviewSection below needs no equivalent
+  // filter, since it only renders for privileged viewers in the first place.
+  const todayActivities = useMemo(
+    () => todayTasks.map(TaskAdapter.toFamilyActivity).map((activity) =>
+      canApproveTaskCompletion
+        ? activity
+        : { ...activity, availableActions: activity.availableActions.filter((a) => a !== 'approve' && a !== 'decline') },
+    ),
+    [todayTasks, canApproveTaskCompletion],
+  );
+
+  const tasksNeedingReview = useMemo(() => getTasksNeedingAttention(tasks), [tasks]);
+  const hasTaskReviewSection = canApproveTaskCompletion && tasksNeedingReview.length > 0;
 
   const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
@@ -289,6 +374,15 @@ export function TodayScreen() {
             householdId={household.id}
             role={role}
             reviewerId={user?.id ?? ''}
+          />
+        )}
+
+        {hasTaskReviewSection && household && (
+          <TaskReviewSection
+            tasks={tasksNeedingReview}
+            members={members}
+            householdId={household.id}
+            role={role}
           />
         )}
 
