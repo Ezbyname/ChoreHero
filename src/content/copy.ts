@@ -54,6 +54,9 @@ export const copy = {
     unassigned:     'Waiting for someone to take this',
     needsAttention: 'Needs attention',
     points:         'pts',
+    // P2-D07
+    showMore:       'Show more',
+    showLess:       'Show less',
   },
   // User-facing labels for FamilyActivity.kind — never expose DB table names
   // (e.g. "contribution_claims") in UI copy.
@@ -224,6 +227,18 @@ export const copy = {
     button:           'Create task',
     success:          'Task created.',
     error:            'We couldn\'t create that task. Please try again.',
+    // P2-D01/P2-D02
+    descriptionLabel:       'Description (optional)',
+    descriptionPlaceholder: 'Add any helpful details',
+    descriptionTooLong:     'Description can be at most 500 characters.',
+    // P2-D03/P2-D05/P2-D10
+    dueDateLabel:        'Due date (optional)',
+    addDueDateButton:    'Add a due date',
+    removeDueDateButton: 'Remove due date',
+    addTimeButton:       'Add a time',
+    removeTimeButton:    'Remove time',
+    pastDueWarning:      'That date has already passed.',
+    dueDateRecommendation: 'Adding a due date can help keep things on track.',
   },
   errors: {
     generic: 'Something did not work as expected. Want to try again?',

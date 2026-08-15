@@ -38,6 +38,7 @@ export interface FamilyActivity {
   targetProfileId?:    string;
   status:              ActivityStatus;
   dueAt?:              string;
+  dueAtHasTime?:       boolean;
   points?:             number;
   requiresApproval:    boolean;
   availableActions:    readonly ActivityAction[];

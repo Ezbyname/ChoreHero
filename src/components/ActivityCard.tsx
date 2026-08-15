@@ -1,9 +1,56 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { FamilyAvatar } from '@/components/FamilyAvatar';
 import { copy } from '@/content/copy';
+import { formatDueDate } from '@/domain/dateFormat';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
+
+const DESCRIPTION_MAX_LINES = 2; // P2-D07
+
+// P2-D07: the expansion control must appear only when the description
+// actually exceeds DESCRIPTION_MAX_LINES rendered lines — not merely
+// whenever a description exists. A hidden "measurer" Text renders the
+// full, unclipped description off-screen to get the true line count via
+// onTextLayout; numberOfLines is deliberately never applied to it, since
+// RN clips the layout (and therefore the reported line count) at the
+// native level before onTextLayout fires — measuring the already-clipped
+// Text would always report <= DESCRIPTION_MAX_LINES and defeat the check.
+// Isolated in its own component (rather than inline in ActivityCard) so
+// its state resets correctly via React's own remount-on-key-change
+// whenever the description text changes, without hand-rolled reset logic
+// scattered through the parent.
+function DescriptionBlock({ description }: { description: string }) {
+  const [isExpanded, setIsExpanded]       = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  return (
+    <View style={styles.descriptionBlock}>
+      <Text
+        style={[styles.description, styles.measurer]}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        onTextLayout={(e) => setIsOverflowing(e.nativeEvent.lines.length > DESCRIPTION_MAX_LINES)}
+      >
+        {description}
+      </Text>
+      <Text
+        style={styles.description}
+        numberOfLines={isExpanded ? undefined : DESCRIPTION_MAX_LINES}
+      >
+        {description}
+      </Text>
+      {isOverflowing && (
+        <TouchableOpacity onPress={() => setIsExpanded((v) => !v)} activeOpacity={0.7}>
+          <Text style={styles.showMoreText}>
+            {isExpanded ? copy.taskCard.showLess : copy.taskCard.showMore}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
 
 const ACTION_LABELS: Record<ActivityAction, string> = {
   claim:    copy.activityCard.claimAction,
@@ -41,6 +88,12 @@ export function ActivityCard({
   const badgeText        = isNeedsAttention ? copy.taskCard.needsAttention : copy.activityKinds[activity.kind];
   const actions          = onAction ? activity.availableActions : [];
 
+  // P2-D06: computed at render time so relative labels ("Today"/"Tomorrow")
+  // stay correct as time passes without needing a subscription.
+  const dueDateInfo = activity.dueAt != null
+    ? formatDueDate(activity.dueAt, activity.dueAtHasTime)
+    : null;
+
   return (
     <View style={[styles.card, isNeedsAttention && styles.cardAttention]}>
       {showKindBadge && (
@@ -52,6 +105,20 @@ export function ActivityCard({
       )}
 
       <Text style={styles.title} numberOfLines={2}>{activity.title}</Text>
+
+      {activity.description != null && activity.description !== '' && (
+        // key={activity.description}: guarantees a fresh isExpanded/
+        // isOverflowing state if this same card instance ever renders a
+        // different description (defensive; in practice ActivityList's
+        // key={activity.id} already remounts the whole card per task).
+        <DescriptionBlock key={activity.description} description={activity.description} />
+      )}
+
+      {dueDateInfo && (
+        <Text style={styles.dueDate}>
+          {dueDateInfo.dateLabel}{dueDateInfo.timeLabel ? ` · ${dueDateInfo.timeLabel}` : ''}
+        </Text>
+      )}
 
       <View style={styles.meta}>
         {personName && (
@@ -140,6 +207,32 @@ const styles = StyleSheet.create({
     ...typography.body,
     color:        colors.textPrimary,
     fontWeight:   '500',
+    marginBottom: spacing.sm,
+  },
+  descriptionBlock: {
+    marginBottom: spacing.sm,
+  },
+  description: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  // Off-screen measurement pass — see DescriptionBlock's comment. Must not
+  // affect visible layout or intercept touches.
+  measurer: {
+    position: 'absolute',
+    left:     0,
+    right:    0,
+    opacity:  0,
+  },
+  showMoreText: {
+    ...typography.caption,
+    color:      colors.primary,
+    fontWeight: '600',
+    marginTop:  2,
+  },
+  dueDate: {
+    ...typography.caption,
+    color:        colors.textMuted,
     marginBottom: spacing.sm,
   },
   meta: {
