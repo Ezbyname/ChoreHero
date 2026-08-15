@@ -20,6 +20,12 @@ export interface Task {
   createdById?: string;
   householdId?: string;
   dueAt?:       string;
+  // Discriminator for dueAt: true = date+time was explicitly supplied,
+  // false = date-only (all-day). Never inferred from dueAt's shape — see
+  // src/domain/dateFormat.ts. Absent/undefined for a legacy row whose
+  // due_at predates this column; formatDueDate treats that the same as
+  // false (date-only), the safer fallback.
+  dueAtHasTime?: boolean;
   priority?:    TaskPriority; // optional: not stored in DB
   status:       TaskStatus;
   points?:      number;

@@ -182,6 +182,7 @@ export interface Database {
           assigned_by_profile_id:    string | null;
           assignee_profile_id:       string | null;
           due_at:                    string | null;
+          due_at_has_time:           boolean | null;
           points:                    number;
           source_service_request_id: string | null;
           completed_at:              string | null;
@@ -199,6 +200,7 @@ export interface Database {
           assigned_by_profile_id?:    string | null;
           assignee_profile_id?:       string | null;
           due_at?:                    string | null;
+          due_at_has_time?:           boolean | null;
           points?:                    number;
           source_service_request_id?: string | null;
           completed_at?:              string | null;

@@ -44,6 +44,7 @@ export const TaskAdapter = {
       targetProfileId:    task.assigneeId,
       status:             STATUS_MAP[task.status],
       dueAt:              task.dueAt,
+      dueAtHasTime:       task.dueAtHasTime,
       points:             task.points,
       requiresApproval:   false,
       availableActions,

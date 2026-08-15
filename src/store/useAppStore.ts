@@ -180,7 +180,8 @@ function mapTaskRow(t: TaskRow): Task {
     assigneeId:  t.assignee_profile_id ?? undefined,
     createdById: t.created_by_profile_id,
     householdId: t.household_id,
-    dueAt:       t.due_at ?? undefined,
+    dueAt:        t.due_at ?? undefined,
+    dueAtHasTime: t.due_at_has_time ?? undefined,
     status:      t.status as Task['status'],
     points:      t.points,
     // priority: not in DB schema; omitted (field is optional)

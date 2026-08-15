@@ -168,6 +168,7 @@ export async function insertTask(input: {
   createdByProfileId:  string;
   assigneeProfileId?:  string | null;
   dueAt?:              string | null;
+  dueAtHasTime?:       boolean | null;
   points?:             number;
 }): Promise<RepositoryResult<TaskRow>> {
   if (!supabase) return { data: null, error: notConfiguredError() };
@@ -182,6 +183,7 @@ export async function insertTask(input: {
       assigned_by_profile_id:  input.assigneeProfileId ? input.createdByProfileId : null,
       assignee_profile_id:     input.assigneeProfileId ?? null,
       due_at:                  input.dueAt ?? null,
+      due_at_has_time:         input.dueAt ? (input.dueAtHasTime ?? false) : null,
       points:                  input.points ?? 0,
     })
     .select('*')

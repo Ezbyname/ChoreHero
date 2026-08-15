@@ -38,6 +38,18 @@ test('carries over assignee/creator/points/dueAt', () => {
   assert.equal(activity.dueAt, '2026-07-09T10:00:00.000Z');
 });
 
+// P2-D03: dueAtHasTime is carried through unchanged, never derived from
+// dueAt's shape here — the adapter is a pure passthrough for this field.
+test('carries over description and dueAtHasTime', () => {
+  const activity = TaskAdapter.toFamilyActivity(makeTask({
+    description:  'Load and run the dishwasher',
+    dueAt:        '2026-08-15T00:00:00.000Z',
+    dueAtHasTime: true,
+  }));
+  assert.equal(activity.description, 'Load and run the dishwasher');
+  assert.equal(activity.dueAtHasTime, true);
+});
+
 test('a needs_attention task exposes approve and decline actions', () => {
   const activity = TaskAdapter.toFamilyActivity(makeTask({ status: 'needs_attention', assigneeId: 'child-1' }));
   assert.deepEqual(activity.availableActions, ['approve', 'decline']);

@@ -14,6 +14,16 @@ interface CreateTaskInput {
   // undefined/null => Open Task (matches the assignee picker's "Open to
   // anyone" option and the existing FamilyActivity 'claim' action).
   assigneeProfileId?:   string | null;
+  // P2-D01/P2-D02: length enforcement is UI-layer only (see AssignedByMeScreen
+  // .tsx); this function just normalizes empty/whitespace-only to undefined
+  // so it persists as NULL, matching the existing title.trim() pattern.
+  description?:         string;
+  // P2-D03: optional; when present, dueAtHasTime distinguishes date-only
+  // from date+time and MUST be supplied by the caller (the picker
+  // interaction is the only place that genuinely knows which was chosen —
+  // see src/domain/dateFormat.ts's header comment).
+  dueAt?:                string;
+  dueAtHasTime?:          boolean;
   points?:              number;
   role:                 string | null;
 }
@@ -34,17 +44,26 @@ export async function createTask(input: CreateTaskInput): Promise<CreateTaskResu
   const title = input.title.trim();
   if (!title) return { ok: false, reason: 'invalid_input' };
 
+  // P2-D02: empty/whitespace-only normalizes to undefined (-> NULL on
+  // persist), the same way an omitted description already does. Not
+  // rejected — only P2-D01's length limit is a validation failure, and
+  // that's enforced in the UI layer (P2-D09), not here.
+  const description = input.description?.trim() || undefined;
+
   if (!isSupabaseConfigured) {
     const { tasks, setTasks } = useAppStore.getState();
     setTasks([
       {
-        id:          `task-${Date.now()}`,
+        id:           `task-${Date.now()}`,
         title,
-        householdId: input.householdId,
-        createdById: input.createdByProfileId,
-        assigneeId:  input.assigneeProfileId ?? undefined,
-        status:      'open',
-        points:      input.points ?? 0,
+        description,
+        householdId:  input.householdId,
+        createdById:  input.createdByProfileId,
+        assigneeId:   input.assigneeProfileId ?? undefined,
+        dueAt:        input.dueAt,
+        dueAtHasTime: input.dueAt ? (input.dueAtHasTime ?? false) : undefined,
+        status:       'open',
+        points:       input.points ?? 0,
       },
       ...tasks,
     ]);
@@ -54,8 +73,11 @@ export async function createTask(input: CreateTaskInput): Promise<CreateTaskResu
   const inserted = await insertTask({
     householdId:        input.householdId,
     title,
+    description,
     createdByProfileId: input.createdByProfileId,
     assigneeProfileId:  input.assigneeProfileId ?? null,
+    dueAt:               input.dueAt ?? null,
+    dueAtHasTime:         input.dueAtHasTime ?? null,
     points:              input.points,
   });
   if (inserted.error) return { ok: false, reason: 'failed' };
