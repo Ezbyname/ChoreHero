@@ -77,9 +77,9 @@ lsof -ti:8081 -sTCP:LISTEN | xargs -r kill
 | command | what it does |
 |---|---|
 | `nav <url>` | navigate |
-| `wait-for text=<substring>` or `wait-for <css selector>` | wait for visible |
-| `click <same selector forms>` | click |
-| `fill <selector> <text>` | fill an input (selector and text are just space-split — CSS attribute selectors like `input[placeholder="..."]` won't parse; use plain tag/class/`text=` selectors, or add an `eval` if you need something an attribute selector would've caught) |
+| `wait-for text=<substring>` or `wait-for placeholder=<substring>` or `wait-for <css selector>` | wait for visible |
+| `click <same selector forms>` | click — `.first()` of the match; if a selector matches more than one thing (e.g. two "Approve" buttons on the same screen — a claim's and a task's), it clicks whichever is currently first in DOM order, which shifts as earlier matches disappear. Clear/approve items one at a time and re-check what's left rather than assuming a fixed click count. |
+| `fill <selector> -- <text>` | fill an input. Selector and text are split on `' -- '` (not the first space), so both can contain spaces — use `placeholder=<full placeholder text>` for React Native Web `TextInput`s, since plain CSS attribute selectors like `input[placeholder="..."]` don't parse through this driver's naive selector passthrough. |
 | `press <key>` | keyboard press (e.g. `Enter`) |
 | `screenshot [name]` | full-page screenshot |
 | `console [--errors]` | dump captured console/page errors |
@@ -160,20 +160,20 @@ see Gotchas.
   environment, not a local smoke-test harness — don't try to point it at
   the local dev server started above; it assumes a real backend and real
   seeded users (`e2e/helpers.ts`'s `QA_USERS`).
-- **The Assigned-tab task-creation form didn't appear for the mock user.**
-  With the seeded mock data (`user-dad`, role `owner` in `src/mock/`),
-  navigating to the "Assigned" tab showed only the empty state, not the
-  "Create a task" form gated by `selectCanCreateTasks` in
-  `AssignedByMeScreen.tsx` — even though `owner` should have
-  `tasks.create`. Not investigated further (out of scope for this
-  skill); if you need to drive task creation, check
-  `useAppStore.getState()` hydration timing/role resolution first rather
-  than assuming the driver or selector logic alone is at fault.
-- **`fill`'s selector splits on the first space**, so a selector
-  containing spaces (e.g. an attribute-value CSS selector) will parse
-  wrong — this is the driver's own simplification, not an app issue. Use
-  `text=`/class/tag selectors, or extend the driver if you need real CSS
-  attribute selectors.
+- **(Fixed) Mock-mode data used to get wiped moments after loading.**
+  Earlier versions of this app cleared `user`/`household`/`tasks`/etc
+  right after mock hydration, so screens gated on that data (Assigned
+  tab's "Create a task" form, Settings' invite section, My Tasks) always
+  rendered empty regardless of role/permissions — see
+  `AppDataBootstrap.tsx`'s `isSupabaseConfigured` guard. Fixed; if you
+  see this symptom again, it's a regression of that guard, not a driver
+  or selector problem.
+- **Multiple identically-labeled action buttons on one screen.** The
+  Today screen can show several "Approve" buttons at once (contribution
+  claims and needs_attention tasks both use the same label) — `click
+  text=Approve` always hits whichever is first in current DOM order.
+  Clear items one at a time and re-check screenshots between clicks
+  rather than assuming which one a given click landed on.
 
 ## Troubleshooting
 

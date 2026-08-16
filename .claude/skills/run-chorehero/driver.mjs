@@ -51,6 +51,7 @@ page.on('pageerror', (err) => consoleLog.push({ type: 'pageerror', text: String(
 
 function locatorFor(sel) {
   if (sel.startsWith('text=')) return page.getByText(sel.slice(5), { exact: false });
+  if (sel.startsWith('placeholder=')) return page.getByPlaceholder(sel.slice(12), { exact: false });
   return page.locator(sel);
 }
 
@@ -78,9 +79,12 @@ async function run(line) {
         break;
       }
       case 'fill': {
-        const sp = arg.indexOf(' ');
+        // Split on ' -- ' (not the first space) so both the selector and
+        // the value can contain spaces — needed for placeholder= selectors
+        // and multi-word values alike.
+        const sp = arg.indexOf(' -- ');
         const sel = sp === -1 ? arg : arg.slice(0, sp);
-        const text = sp === -1 ? '' : arg.slice(sp + 1);
+        const text = sp === -1 ? '' : arg.slice(sp + 4);
         await locatorFor(sel).first().fill(text);
         console.log(`[ok] fill ${sel} = ${text}`);
         break;
