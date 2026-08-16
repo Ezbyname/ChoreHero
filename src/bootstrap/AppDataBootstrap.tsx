@@ -109,6 +109,21 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       return;
     }
 
+    // Mock/dev mode (no Supabase credentials): AppBootstrap's own
+    // hydrateFromMockSeed() effect owns user/household/tasks/etc entirely.
+    // Without this guard, isAuthenticated/authUser are always false here
+    // (mock mode never produces a Supabase authUser), so the branch below
+    // would call clearAppData() and wipe out the mock seed data moments
+    // after AppBootstrap populated it — every screen would then render as
+    // if freshly signed out (no household, no user, every list empty),
+    // which is what the blank Settings screen and missing create-task
+    // form in the Assigned tab turned out to be: not a missing feature,
+    // but this effect racing hydrateFromMockSeed() and always winning.
+    if (!isSupabaseConfigured) {
+      markAppHydrationAuthResolved();
+      return;
+    }
+
     if (!isAuthenticated || !authUser) {
       clearAppData();
       pendingHydrationRef.current = false;
