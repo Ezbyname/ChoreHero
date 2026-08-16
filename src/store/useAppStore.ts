@@ -67,7 +67,14 @@ interface AppActions {
   // the tasks slice after a single mutation, without a full re-hydration.
   setTaskRows:           (rows: TaskRow[]) => void;
   setRewards:            (rewards: Reward[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors setTaskRows.
+  // Used by createReward to refresh the rewards slice after an insert.
+  setRewardRows:         (rows: RewardRow[]) => void;
   setPointsBalances:     (balances: PointsBalance[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors setTaskRows.
+  // Used by completeTask/approveTaskCompletion to refresh balances after
+  // a completion RPC that also awards points (EX-10).
+  setPointsBalanceRows:  (rows: PointsBalanceRow[]) => void;
   setContributionClaims: (claims: ContributionClaim[]) => void;
   // Accepts raw DB rows and maps them internally — mirrors how hydration
   // mapping stays inside the store. Used by feature functions to refresh
@@ -247,7 +254,9 @@ export const useAppStore = create<AppStore>((rawSet) => {
   setTasks:              (tasks)     => set({ tasks }),
   setTaskRows:           (rows)      => set({ tasks: rows.map(mapTaskRow) }),
   setRewards:            (rewards)   => set({ rewards }),
+  setRewardRows:         (rows)      => set({ rewards: rows.map(mapRewardRow) }),
   setPointsBalances:     (balances)  => set({ pointsBalances: balances }),
+  setPointsBalanceRows:  (rows)      => set({ pointsBalances: rows.map(mapPointsBalanceRow) }),
   setContributionClaims: (claims)    => set({ contributionClaims: claims }),
   setContributionClaimRows: (rows)   =>
     set({ contributionClaims: rows.map(mapContributionClaimRow) }),

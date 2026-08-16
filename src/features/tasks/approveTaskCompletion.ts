@@ -1,6 +1,6 @@
 import { hasHouseholdPermission } from '@/domain/permissions';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
-import { approveTaskCompletion as approveTaskCompletionRpc, getTasksForHousehold } from '@/lib/repositories';
+import { approveTaskCompletion as approveTaskCompletionRpc, getPointsBalancesForHousehold, getTasksForHousehold } from '@/lib/repositories';
 import { useAppStore } from '@/store/useAppStore';
 
 // Dedicated ERRCODE the RPC raises when the task is not 'needs_attention'
@@ -36,7 +36,7 @@ export async function approveTaskCompletion(
   }
 
   if (!isSupabaseConfigured) {
-    const { tasks, setTasks } = useAppStore.getState();
+    const { tasks, setTasks, pointsBalances, setPointsBalances } = useAppStore.getState();
     const task = tasks.find((t) => t.id === input.taskId);
     if (!task || task.status !== 'needs_attention') {
       return { ok: false, reason: 'not_pending' };
@@ -45,6 +45,23 @@ export async function approveTaskCompletion(
     setTasks(
       tasks.map((t) => (t.id === input.taskId ? { ...t, status: 'completed' } : t)),
     );
+
+    // EX-10: award points to the task's own assignee (worker credit — the
+    // approving adult is never credited), mirroring the real RPC's
+    // completed_by_profile_id = v_task.assignee_profile_id and its
+    // points_balances upsert.
+    if (task.assigneeId) {
+      const awarded  = task.points ?? 0;
+      const existing = pointsBalances.find((pb) => pb.userId === task.assigneeId);
+      setPointsBalances(
+        existing
+          ? pointsBalances.map((pb) =>
+              pb.userId === task.assigneeId ? { ...pb, balance: pb.balance + awarded } : pb,
+            )
+          : [...pointsBalances, { userId: task.assigneeId, householdId: task.householdId ?? input.householdId, balance: awarded }],
+      );
+    }
+
     return { ok: true };
   }
 
@@ -59,5 +76,13 @@ export async function approveTaskCompletion(
   if (refreshed.error) return { ok: false, reason: 'failed' };
 
   useAppStore.getState().setTaskRows(refreshed.data);
+
+  // Best-effort refresh — see completeTask.ts's identical comment: the
+  // completion + points award already committed atomically server-side.
+  const refreshedBalances = await getPointsBalancesForHousehold(input.householdId);
+  if (!refreshedBalances.error) {
+    useAppStore.getState().setPointsBalanceRows(refreshedBalances.data);
+  }
+
   return { ok: true };
 }

@@ -1,6 +1,6 @@
 import { hasHouseholdPermission } from '@/domain/permissions';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
-import { completeTask as completeTaskRpc, getTasksForHousehold } from '@/lib/repositories';
+import { completeTask as completeTaskRpc, getPointsBalancesForHousehold, getTasksForHousehold } from '@/lib/repositories';
 import { useAppStore } from '@/store/useAppStore';
 
 // Dedicated ERRCODE the RPC raises when the task is not 'open' at the
@@ -35,13 +35,31 @@ export async function completeTask(input: CompleteTaskInput): Promise<CompleteTa
   }
 
   if (!isSupabaseConfigured) {
-    const { tasks, setTasks } = useAppStore.getState();
+    const { tasks, setTasks, pointsBalances, setPointsBalances, user } = useAppStore.getState();
     const task = tasks.find((t) => t.id === input.taskId);
     if (!task || task.status !== 'open') {
       return { ok: false, reason: 'not_open' };
     }
 
     setTasks(tasks.map((t) => (t.id === input.taskId ? { ...t, status: 'completed' } : t)));
+
+    // EX-10: award points to the completer (direct completion — worker
+    // credit is the caller themselves, mirroring the real RPC's
+    // completed_by_profile_id = v_caller). Upserts the same way the RPC's
+    // ON CONFLICT DO UPDATE does — increment if a balance row already
+    // exists, otherwise create one.
+    if (user) {
+      const awarded  = task.points ?? 0;
+      const existing = pointsBalances.find((pb) => pb.userId === user.id);
+      setPointsBalances(
+        existing
+          ? pointsBalances.map((pb) =>
+              pb.userId === user.id ? { ...pb, balance: pb.balance + awarded } : pb,
+            )
+          : [...pointsBalances, { userId: user.id, householdId: task.householdId ?? input.householdId, balance: awarded }],
+      );
+    }
+
     return { ok: true };
   }
 
@@ -56,5 +74,15 @@ export async function completeTask(input: CompleteTaskInput): Promise<CompleteTa
   if (refreshed.error) return { ok: false, reason: 'failed' };
 
   useAppStore.getState().setTaskRows(refreshed.data);
+
+  // Best-effort: the completion + points award already committed
+  // atomically server-side (see the RPC migration); a failure to refresh
+  // the client's cached balance here is a stale-UI concern, not a
+  // completion failure, so it does not flip the result to 'failed'.
+  const refreshedBalances = await getPointsBalancesForHousehold(input.householdId);
+  if (!refreshedBalances.error) {
+    useAppStore.getState().setPointsBalanceRows(refreshedBalances.data);
+  }
+
   return { ok: true };
 }
