@@ -127,6 +127,14 @@ export function LoginScreen() {
 
           <TouchableOpacity
             style={styles.linkRow}
+            onPress={() => navigation.navigate('ForgotPassword')}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.linkText}>{copy.auth.forgotPasswordLink}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkRow}
             onPress={() => navigation.navigate('Signup')}
             disabled={isSubmitting}
           >

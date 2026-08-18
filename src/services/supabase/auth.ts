@@ -52,3 +52,23 @@ export async function updatePassword(
   const { error } = await supabase.auth.updateUser({ password });
   return { error };
 }
+
+export async function sendPasswordResetEmail(
+  email: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: null };
+  }
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  return { error };
+}
+
+export async function resendSignupEmail(
+  email: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: null };
+  }
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  return { error };
+}
