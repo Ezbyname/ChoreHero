@@ -3,9 +3,11 @@ import { AuthBootstrap } from '@/bootstrap/AuthBootstrap';
 import { AppDataBootstrap } from '@/bootstrap/AppDataBootstrap';
 import { AuthGate } from '@/navigation/AuthGate';
 import { useAppStore } from '@/store/useAppStore';
-import { hasAuthRedirectMarkers } from '@/lib/authRedirectDetection';
+import { getAuthRedirectResult } from '@/lib/authRedirectDetection';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { EmailConfirmedScreen } from '@/screens/EmailConfirmedScreen';
+import { ResetPasswordScreen } from '@/screens/ResetPasswordScreen';
+import { RecoveryLinkExpiredScreen } from '@/screens/RecoveryLinkExpiredScreen';
 
 // AppBootstrap is the root of the non-navigation tree.
 // Rendering order:
@@ -25,12 +27,28 @@ export function AppBootstrap() {
     }
   }, []);
 
-  // This tab landed directly from a Supabase auth email link (signup
-  // confirmation, magic link, invite, recovery). Supabase's client still
-  // establishes a session here as a side effect, but this tab is not where
-  // the user actually signs in — show a static confirmation instead of
-  // booting the full authenticated app flow for it.
-  if (hasAuthRedirectMarkers()) {
+  // This tab landed directly from a Supabase auth email link. Which screen
+  // it gets depends on which kind of link:
+  //   'recovery' -> ResetPasswordScreen (the user can set a new password —
+  //                 a real session already exists at this point; see that
+  //                 screen's own comment for why)
+  //   'error'    -> RecoveryLinkExpiredScreen (expired/invalid/used link —
+  //                 previously this fell through to a normal, wrong app
+  //                 boot; now it's classified and handled explicitly)
+  //   'other'    -> EmailConfirmedScreen, unchanged (signup confirmation,
+  //                 invite, magic link — this tab's session is incidental,
+  //                 the user signs in for real on whichever device they
+  //                 actually use ChoreHero from)
+  //   'none'     -> falls through to the normal boot below, unchanged
+  const redirectResult = getAuthRedirectResult();
+
+  if (redirectResult.type === 'recovery') {
+    return <ResetPasswordScreen />;
+  }
+  if (redirectResult.type === 'error') {
+    return <RecoveryLinkExpiredScreen />;
+  }
+  if (redirectResult.type === 'other') {
     return <EmailConfirmedScreen />;
   }
 
