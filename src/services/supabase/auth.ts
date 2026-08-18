@@ -42,3 +42,13 @@ export async function signOut(): Promise<{ error: AuthError | null }> {
   }
   return supabase.auth.signOut();
 }
+
+export async function updatePassword(
+  password: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: new Error('Supabase is not configured.') as AuthError };
+  }
+  const { error } = await supabase.auth.updateUser({ password });
+  return { error };
+}
