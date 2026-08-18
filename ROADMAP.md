@@ -326,8 +326,58 @@ interface TaskHelpRequest {
 | My Tasks | Tasks assigned to current user | Help request status on assigned tasks |
 | Assigned | Placeholder | Tasks assigned by current user + pending service requests |
 | Rewards | Points + reward cards | Redemption flow, child selector |
-| Settings | Placeholder | Household, profile, preferences |
+| Settings | Household name, invite management, sign out | Profile/preferences (see below) |
 
 ---
 
-*Last updated: T1.3.1 complete. T1.3.2 (Auth Synchronization Layer) next.*
+## Settings — Planned (TODO, not scoped or started)
+
+Requested additions to `SettingsScreen.tsx`, none implemented yet — no schema, no
+migration, no UI exists for any of these as of this note. Listed here as a TODO
+inventory, not an authorization to build them.
+
+- **Language** — Hebrew and Spanish, in addition to English. Note: Hebrew is
+  RTL, which is a layout-direction concern throughout the app, not just a
+  string-translation one — this is a bigger slice than adding a language
+  picker alone.
+- **Theme** — light mode and dark mode.
+- **Profile** — nickname (display name is already editable via profile setup;
+  a settings-page edit path for it is not yet built), avatar via emoji picker
+  (existing `avatar_emoji` column) or photo upload (existing `avatar_url` /
+  Supabase Storage avatar bucket — see `20260708000000_avatar_storage.sql` —
+  already exists at the storage-bucket level, but no settings-page upload UI
+  calls it yet), and a profile-visibility control (who can see it — not
+  defined anywhere yet, including whether it means visibility within the
+  household or beyond it).
+- **Notifications** — on/off control, plus a sound selection for alerts.
+  No push-notification infrastructure exists in this app at all yet (no
+  Expo push token registration, no notification-sending code anywhere) — this
+  would need that foundational piece before a settings toggle would control
+  anything real.
+
+### Other candidates worth considering for the Settings page
+
+Not requested above, but natural fits given what already exists elsewhere in
+the app:
+
+- **Household member management** — the member list is already visible
+  (read-only); Settings is the natural home for role changes / removing a
+  member, both currently NOT_IMPLEMENTED (no RLS UPDATE/DELETE policy exists
+  yet for `household_members`).
+- **Rename / leave household** — same story: no UPDATE policy exists for
+  `households` yet either.
+- **Account security** — change password, change email (Supabase Auth
+  supports both natively; no UI wraps them yet).
+- **Data export or account deletion** — increasingly a baseline expectation
+  for any app handling family/child data, not just a nice-to-have.
+- **Points/rewards display preferences** — e.g. whether a child sees their
+  own point history in detail or just the current balance.
+- **Due-date / reminder defaults** — e.g. a household-level default reminder
+  lead time, complementing the existing per-task due date feature.
+- **Accessibility** — text size, and screen-reader-specific settings if any
+  additional patterns beyond the existing `accessibilityElementsHidden` usage
+  are needed.
+
+---
+
+*Last updated: EX-10 (task-completion points) + basic reward creation shipped. Reward redemption being scoped as the candidate next slice. Settings TODOs above added but not scoped.*
