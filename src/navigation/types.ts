@@ -7,7 +7,8 @@ export type RootTabParamList = {
 };
 
 export type AuthStackParamList = {
-  AuthWelcome: undefined;
-  Login:       undefined;
-  Signup:      undefined;
+  AuthWelcome:    undefined;
+  Login:          undefined;
+  Signup:         undefined;
+  ForgotPassword: undefined;
 };
