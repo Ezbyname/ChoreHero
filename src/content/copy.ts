@@ -147,6 +147,37 @@ export const copy = {
     signupCheckEmailTitle: 'Check your email',
     signupCheckEmail:      'We sent you a link to finish creating your account.',
 
+    // Forgot password (Login screen link + ForgotPasswordScreen)
+    forgotPasswordLink:    'Forgot your password?',
+    forgotPasswordTitle:   'Reset your password',
+    forgotPasswordSubtitle: 'Enter your email and we\'ll send you a link to get back in.',
+    forgotPasswordButton:  'Send reset link',
+    sendingResetLink:      'Sending…',
+    // Enumeration-safe: identical wording whether or not the email is
+    // actually registered — never confirm or deny that.
+    resetLinkSentTitle: 'Check your email',
+    resetLinkSentBody:  'If that email is registered, we\'ve sent a link to reset your password.',
+
+    // Resend (shared by SignupScreen's and ForgotPasswordScreen's success states)
+    resendEmailButton:    'Resend email',
+    resendEmailCountdown: 'Resend in {n}s',
+
+    // ResetPasswordScreen (landing from the recovery email link)
+    resetPasswordTitle:      'Choose a new password',
+    resetPasswordSubtitle:   'Enter and confirm your new password below.',
+    newPasswordLabel:        'New password',
+    confirmNewPasswordLabel: 'Confirm new password',
+    resetPasswordButton:     'Update password',
+    updatingPassword:        'Updating…',
+    resetPasswordError:      'We couldn\'t update your password. Please try again.',
+    passwordUpdatedTitle:    'Password updated',
+    passwordUpdatedBody:     'You can sign in with your new password now.',
+    goToSignIn:              'Go to Sign in',
+
+    // Recovery link failure states (AppBootstrap routes here — see Task 4)
+    recoveryLinkExpiredTitle: 'That link has expired',
+    recoveryLinkExpiredBody:  'Password reset links only work for a little while. Request a new one below.',
+
     // Landing state after clicking the email confirmation link itself —
     // shown instead of booting the full app, since the real sign-in happens
     // on whichever device the user actually uses ChoreHero from.
