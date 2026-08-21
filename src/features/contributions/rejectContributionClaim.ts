@@ -1,11 +1,11 @@
 import { hasHouseholdPermission } from '@/domain/permissions';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
-import { getContributionClaimsForHousehold, updateContributionClaimStatus } from '@/lib/repositories';
+import { getContributionClaimById, getContributionClaimsForHousehold, updateContributionClaimStatus } from '@/lib/repositories';
 import { useAppStore } from '@/store/useAppStore';
 
 export type RejectContributionClaimResult =
   | { ok: true }
-  | { ok: false; reason: 'not_authorized' | 'not_found' | 'not_pending' | 'failed' };
+  | { ok: false; reason: 'not_authorized' | 'not_found' | 'not_pending' | 'self_review' | 'failed' };
 
 interface RejectContributionClaimInput {
   claimId:             string;
@@ -14,6 +14,9 @@ interface RejectContributionClaimInput {
   reviewedByProfileId: string;
 }
 
+// self_review: mirrors approveContributionClaim's own comment — a claimant
+// must never review (approve OR reject) their own claim. See that file for
+// the full rationale and the matching RLS enforcement.
 export async function rejectContributionClaim(
   input: RejectContributionClaimInput,
 ): Promise<RejectContributionClaimResult> {
@@ -26,6 +29,7 @@ export async function rejectContributionClaim(
     const claim = contributionClaims.find((c) => c.id === input.claimId);
     if (!claim) return { ok: false, reason: 'not_found' };
     if (claim.status !== 'pending') return { ok: false, reason: 'not_pending' };
+    if (claim.claimedByProfileId === input.reviewedByProfileId) return { ok: false, reason: 'self_review' };
 
     const now = new Date().toISOString();
     setContributionClaims(
@@ -37,6 +41,12 @@ export async function rejectContributionClaim(
     );
     return { ok: true };
   }
+
+  const claim = await getContributionClaimById(input.claimId);
+  if (claim.error) return { ok: false, reason: 'failed' };
+  if (!claim.data) return { ok: false, reason: 'not_found' };
+  if (claim.data.status !== 'pending') return { ok: false, reason: 'not_pending' };
+  if (claim.data.claimed_by_profile_id === input.reviewedByProfileId) return { ok: false, reason: 'self_review' };
 
   const updated = await updateContributionClaimStatus(input.claimId, {
     status:              'rejected',

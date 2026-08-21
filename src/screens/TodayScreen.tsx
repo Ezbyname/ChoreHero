@@ -255,9 +255,20 @@ export function TodayScreen() {
   // again," re-renders, gets another new array, and never converges. This
   // is what threw "Maximum update depth exceeded" (React error #185) on
   // every real hydration, with no effect and no direct setState involved.
+  // A claimant must never review (approve/decline) their own claim, even
+  // when they also hold contributions.approve_claim — rewards.redeem-style
+  // permission inheritance grants contributions.claim_completed to every
+  // role, so an owner/admin/adult reviewer can genuinely also be the
+  // claimant on some other pending claim. Excluded here rather than left
+  // to ContributionReviewSection, matching how todayActivities below
+  // already filters approve/decline out for a non-privileged viewer of
+  // their own task submission — same "never present your own submission
+  // as reviewable" principle, applied to the other review surface on this
+  // screen. Also enforced at the RLS layer (authoritative boundary) — see
+  // supabase/migrations/20260821000000_contribution_claims_self_review.sql.
   const pendingClaims = useMemo(
-    () => contributionClaims.filter((c) => c.status === 'pending'),
-    [contributionClaims],
+    () => contributionClaims.filter((c) => c.status === 'pending' && c.claimedByProfileId !== user?.id),
+    [contributionClaims, user?.id],
   );
 
   const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
