@@ -42,3 +42,33 @@ export async function signOut(): Promise<{ error: AuthError | null }> {
   }
   return supabase.auth.signOut();
 }
+
+export async function updatePassword(
+  password: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: new Error('Supabase is not configured.') as AuthError };
+  }
+  const { error } = await supabase.auth.updateUser({ password });
+  return { error };
+}
+
+export async function sendPasswordResetEmail(
+  email: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: null };
+  }
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  return { error };
+}
+
+export async function resendSignupEmail(
+  email: string,
+): Promise<{ error: AuthError | null }> {
+  if (!supabase) {
+    return { error: null };
+  }
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  return { error };
+}

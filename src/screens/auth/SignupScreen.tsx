@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { copy } from '@/content/copy';
 import type { AuthStackParamList } from '@/navigation/types';
-import { signUpWithEmail } from '@/services/supabase/auth';
+import { resendSignupEmail, signUpWithEmail } from '@/services/supabase/auth';
+import { useResendCooldown } from '@/lib/useResendCooldown';
 import { colors, spacing, typography } from '@/theme';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'Signup'>;
@@ -43,6 +44,7 @@ export function SignupScreen() {
   const [isSubmitting,    setIsSubmitting]    = useState(false);
   const [localError,      setLocalError]      = useState<string | null>(null);
   const [showSuccess,     setShowSuccess]     = useState(false);
+  const { secondsRemaining, start: startCooldown } = useResendCooldown();
 
   async function handleCreateAccount() {
     if (isSubmitting) return;
@@ -73,6 +75,7 @@ export function SignupScreen() {
       if (!data.session) {
         // Supabase requires email confirmation — no session yet.
         setShowSuccess(true);
+        startCooldown();
       }
       // If data.session exists, AuthBootstrap fires and AuthGate handles transition.
     } catch {
@@ -80,6 +83,13 @@ export function SignupScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleResend() {
+    if (secondsRemaining > 0) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    await resendSignupEmail(normalizedEmail);
+    startCooldown();
   }
 
   // ── Email confirmation success state ────────────────────────────────────────
@@ -90,6 +100,20 @@ export function SignupScreen() {
         <View style={styles.successContent}>
           <Text style={styles.title}>{copy.auth.signupCheckEmailTitle}</Text>
           <Text style={styles.subtitle}>{copy.auth.signupCheckEmail}</Text>
+
+          <TouchableOpacity
+            style={[styles.button, secondsRemaining > 0 && styles.buttonDisabled]}
+            onPress={handleResend}
+            disabled={secondsRemaining > 0}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>
+              {secondsRemaining > 0
+                ? copy.auth.resendEmailCountdown.replace('{n}', String(secondsRemaining))
+                : copy.auth.resendEmailButton}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.button}
             onPress={() => navigation.navigate('Login')}
