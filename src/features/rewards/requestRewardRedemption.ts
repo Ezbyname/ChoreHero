@@ -118,6 +118,21 @@ export async function requestRewardRedemption(
       case IDEMPOTENCY_CONFLICT_CODE:
         return { ok: false, reason: 'idempotency_conflict' };
       case DUPLICATE_PENDING_CODE:
+        // The client's own pre-check (or fast-path idempotency lookup)
+        // missed an existing pending redemption — most likely because this
+        // client's rewardRedemptions slice was stale relative to the
+        // server (RLS is the actual source of truth). Refresh so the UI's
+        // next render reflects the real pending row instead of just an
+        // error, without inventing new client-side state — same
+        // getRewardRedemptionsForHousehold + setRewardRedemptionRows
+        // pair used on the success path below. Best-effort: a refresh
+        // failure here does not change the reported reason.
+        {
+          const refreshedOnConflict = await getRewardRedemptionsForHousehold(input.householdId);
+          if (!refreshedOnConflict.error) {
+            useAppStore.getState().setRewardRedemptionRows(refreshedOnConflict.data);
+          }
+        }
         return { ok: false, reason: 'duplicate_pending' };
       default:
         return { ok: false, reason: 'failed' };

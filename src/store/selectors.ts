@@ -13,6 +13,15 @@ export const selectIsMockHydrated   = (s: AppStore) => s.isMockHydrated;
 export const selectCurrentUserName = (s: AppStore): string | null =>
   s.user?.name ?? null;
 
+// The current viewer's own points balance. Never assume position 0 in
+// pointsBalances belongs to the viewer — the array holds one row per
+// household member with a balance, in no viewer-relative order.
+export const selectMyPointsBalance = (s: AppStore) => {
+  const userId = s.user?.id ?? null;
+  if (!userId) return null;
+  return s.pointsBalances.find((pb) => pb.userId === userId) ?? null;
+};
+
 // ── Auth selectors ────────────────────────────────────────────────────────────
 
 export const selectAuthSession    = (s: AppStore) => s.authSession;

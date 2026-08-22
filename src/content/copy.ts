@@ -103,6 +103,20 @@ export const copy = {
     claimError:          'We couldn\'t send that. Please try again.',
     claimDuplicatePending: 'You already have something waiting for approval. Hang tight!',
   },
+  rewardRedemption: {
+    // Child-facing redemption request UX. Mirrors contributionClaims'
+    // claim*/pending copy shape exactly.
+    requestButton:       'Redeem this reward',
+    pendingBadge:        'Waiting for approval',
+    requestError:        'We couldn\'t send that. Please try again.',
+    insufficientBalance: 'You don\'t have enough points for this yet.',
+    rewardArchived:      'This reward is no longer available.',
+    duplicatePending:    'You already have a request waiting for approval for this reward.',
+    // Distinct from an ordinary failure: signals a request-identity
+    // conflict (the same client_request_id was reused for a different
+    // reward) rather than an everyday retryable error.
+    idempotencyConflict: 'Something went wrong with that request. Please try again.',
+  },
   auth: {
     // Welcome screen
     welcomeTitle:    'Welcome to ChoreHero',

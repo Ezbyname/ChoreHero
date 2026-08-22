@@ -216,3 +216,58 @@ test('reusing a client_request_id for a different reward returns idempotency_con
   assert.deepEqual(conflict, { ok: false, reason: 'idempotency_conflict' });
   assert.equal(useAppStore.getState().rewardRedemptions.length, 1);
 });
+
+// Decision 3: repeated completed redemption is allowed — a resolved
+// (APPROVED or REJECTED) prior cycle for the same reward must not block a
+// new, independent request cycle, unlike an unresolved PENDING one.
+test('a reward with a prior APPROVED cycle can be requested again when otherwise eligible', async () => {
+  seedReward();
+  seedBalance(100);
+  useAppStore.getState().setRewardRedemptions([
+    {
+      id: 'old-cycle', householdId: HOUSEHOLD_ID, rewardId: 'reward-1', requestedByProfileId: CHILD_ID,
+      clientRequestId: 'old-key', pointsRequiredSnapshot: 50, status: 'approved',
+      reviewedByProfileId: 'adult-1', reviewedAt: new Date().toISOString(),
+      requestedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    },
+  ]);
+
+  const result = await requestRewardRedemption({
+    rewardId:             'reward-1',
+    householdId:          HOUSEHOLD_ID,
+    requestedByProfileId: CHILD_ID,
+    role:                 'child',
+    clientRequestId:      'new-key',
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.redemption.status, 'pending');
+  assert.equal(useAppStore.getState().rewardRedemptions.length, 2);
+});
+
+test('a reward with a prior REJECTED cycle can be requested again when otherwise eligible', async () => {
+  seedReward();
+  seedBalance(100);
+  useAppStore.getState().setRewardRedemptions([
+    {
+      id: 'old-cycle', householdId: HOUSEHOLD_ID, rewardId: 'reward-1', requestedByProfileId: CHILD_ID,
+      clientRequestId: 'old-key', pointsRequiredSnapshot: 50, status: 'rejected',
+      reviewedByProfileId: 'adult-1', reviewedAt: new Date().toISOString(),
+      requestedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    },
+  ]);
+
+  const result = await requestRewardRedemption({
+    rewardId:             'reward-1',
+    householdId:          HOUSEHOLD_ID,
+    requestedByProfileId: CHILD_ID,
+    role:                 'child',
+    clientRequestId:      'new-key',
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.redemption.status, 'pending');
+  assert.equal(useAppStore.getState().rewardRedemptions.length, 2);
+});

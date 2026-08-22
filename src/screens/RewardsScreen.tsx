@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
@@ -10,10 +10,13 @@ import { createReward } from '@/features/rewards/createReward';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanCreateRewards,
+  selectCanRequestRedemption,
   selectCurrentHousehold,
   selectCurrentMemberRole,
   selectCurrentUser,
+  selectMyPointsBalance,
   selectPointsBalances,
+  selectRewardRedemptions,
   selectRewards,
 } from '@/store/selectors';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -137,15 +140,40 @@ function CreateRewardForm({
 export function RewardsScreen() {
   const rewards           = useAppStore(selectRewards);
   const pointsBalances    = useAppStore(selectPointsBalances);
+  const myBalance          = useAppStore(selectMyPointsBalance);
   const household          = useAppStore(selectCurrentHousehold);
   const user                 = useAppStore(selectCurrentUser);
   const role                  = useAppStore(selectCurrentMemberRole);
   const canCreateRewards       = useAppStore(selectCanCreateRewards);
+  const canRequestRedemption   = useAppStore(selectCanRequestRedemption);
+  // selectRewardRedemptions returns the raw, stable store array — the same
+  // "filter locally, not inside the selector" rule TodayScreen's
+  // pendingClaims already follows (see its own comment for why a
+  // freshly-.filter()'d selector breaks useSyncExternalStore's snapshot
+  // comparison and causes an infinite re-render loop).
+  const rewardRedemptions      = useAppStore(selectRewardRedemptions);
   const members        = household?.members ?? [];
 
-  const activeRewards   = rewards.filter((r) => r.isActive);
-  // First balance used for progress context — child selector added in a future ticket
-  const selectedBalance = pointsBalances[0];
+  const activeRewards = rewards.filter((r) => r.isActive);
+
+  // Never assume pointsBalances[0] is the viewer's own balance — a member
+  // with no balance row yet (e.g. a child who hasn't earned points) reads
+  // as 0, the same "absent balance -> 0" convention the request RPC and
+  // its own mock-mode branch already use, not a fabricated value.
+  const viewerBalance = myBalance?.balance ?? 0;
+
+  // This viewer's own PENDING redemption per reward, if any (Decision 8:
+  // at most one). A resolved (approved/rejected) historical row is
+  // deliberately excluded — it must never block a new request (Decision 3).
+  const myPendingByRewardId = useMemo(() => {
+    const map = new Map<string, (typeof rewardRedemptions)[number]>();
+    for (const r of rewardRedemptions) {
+      if (r.requestedByProfileId === user?.id && r.status === 'pending') {
+        map.set(r.rewardId, r);
+      }
+    }
+    return map;
+  }, [rewardRedemptions, user?.id]);
 
   return (
     <Screen style={styles.screen}>
@@ -182,15 +210,20 @@ export function RewardsScreen() {
 
         <Text style={styles.sectionLabel}>{copy.rewards.availableRewards}</Text>
 
-        {activeRewards.length === 0 || !selectedBalance ? (
+        {activeRewards.length === 0 ? (
           <EmptyState message={copy.rewards.noRewards} emoji="🎁" />
         ) : (
           activeRewards.map((reward) => (
             <RewardCard
               key={reward.id}
               reward={reward}
-              pointsBalance={selectedBalance}
-              memberName={getMemberNameByUserId(members, selectedBalance.userId)}
+              viewerBalance={viewerBalance}
+              memberName={user ? getMemberNameByUserId(members, user.id) : ''}
+              canRequest={canRequestRedemption}
+              pendingRedemption={myPendingByRewardId.get(reward.id)}
+              householdId={household?.id ?? ''}
+              requestedByProfileId={user?.id ?? ''}
+              role={role}
             />
           ))
         )}

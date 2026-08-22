@@ -8,6 +8,7 @@ import {
   selectPendingRedemptionCount,
   selectHasPendingRedemptionsToReview,
   selectRewardRedemptionsForCurrentUser,
+  selectMyPointsBalance,
 } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
 import type { RewardRedemption } from '@/types';
@@ -129,4 +130,28 @@ test('another child\'s redemption is not treated as the current user\'s own rede
   const mine = selectRewardRedemptionsForCurrentUser(useAppStore.getState());
   assert.equal(mine.length, 1);
   assert.equal(mine[0]?.id, 'r1');
+});
+
+// ── selectMyPointsBalance ──────────────────────────────────────────────────────
+//
+// Guards the exact bug RewardsScreen previously had: pointsBalances[0] is
+// not necessarily the current viewer's own balance.
+
+test('selectMyPointsBalance resolves the current viewer\'s own balance, never array position 0', () => {
+  seedViewer('child-2', 'child');
+  useAppStore.getState().setPointsBalances([
+    { userId: 'child-1', householdId: HOUSEHOLD_ID, balance: 999 }, // position 0 — not the viewer
+    { userId: 'child-2', householdId: HOUSEHOLD_ID, balance: 42 },  // the actual viewer
+  ]);
+
+  const balance = selectMyPointsBalance(useAppStore.getState());
+  assert.equal(balance?.userId, 'child-2');
+  assert.equal(balance?.balance, 42);
+});
+
+test('selectMyPointsBalance returns null when the viewer has no balance row yet', () => {
+  seedViewer('child-1', 'child');
+  useAppStore.getState().setPointsBalances([]);
+
+  assert.equal(selectMyPointsBalance(useAppStore.getState()), null);
 });
