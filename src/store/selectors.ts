@@ -131,6 +131,28 @@ export const selectCanCreateRewards = (s: AppStore): boolean =>
 export const selectCanApproveRequests = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'requests.approve');
 
+// Reward redemption. rewards.request_redemption structurally lives in
+// CHILD_PERMISSIONS and is therefore inherited upward through the role
+// hierarchy (an adult's permission set contains the string too) — that
+// inheritance is NOT authoritative proof an adult may request (Decision 4:
+// requester = beneficiary = child, always). The exact-role check below
+// mirrors the same check the domain layer (requestRewardRedemption.ts) and
+// the database RPC already enforce; it is a UI-facing convenience that
+// agrees with the authoritative boundary, not a second boundary of its own.
+export const selectCanRequestRedemption = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.request_redemption') &&
+  selectCurrentMemberRole(s) === 'child';
+
+// approve/reject are adult+-only permission strings (not shared with
+// child), so no additional exact-role narrowing is needed here — mirrors
+// approveRewardRedemption.ts/rejectRewardRedemption.ts, which likewise
+// apply no check beyond the permission itself.
+export const selectCanApproveRedemption = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.approve_redemption');
+
+export const selectCanRejectRedemption = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.reject_redemption');
+
 // Contributions (vocabulary for T1.7.x — no contribution runtime flow in T1.6.1)
 export const selectCanCreateContribution = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.create_completed');
@@ -190,3 +212,47 @@ export const selectPendingContributionClaimCount = (s: AppStore): number =>
 // Drives visibility of the review section — permission-gated, not role-compared.
 export const selectHasPendingContributionClaimsToReview = (s: AppStore): boolean =>
   selectCanApproveContributionClaim(s) && selectPendingContributionClaimCount(s) > 0;
+
+// ── Reward redemption projection selectors ────────────────────────────────────
+//
+// s.rewardRedemptions already reflects Decision 11's RLS visibility scoping
+// (self-or-adult+) by the time it reaches the store — a child's array only
+// ever contains their own rows; an adult+'s contains the whole household's.
+// These selectors project that array; they do not re-derive or narrow
+// visibility themselves.
+//
+// Same new-array-per-call caveat as the contribution claim selectors above:
+// never call these directly via useAppStore(...) from a component. Compose
+// into another selector that reduces to a primitive (as
+// selectPendingRedemptionCount does below), or call via selectRewardRedemptions
+// (stable) + a local useMemo filter.
+
+export const selectRewardRedemptions = (s: AppStore) => s.rewardRedemptions;
+
+// Household-wide redemptions still awaiting review — feeds the parent
+// review section. Mirrors selectPendingContributionClaims exactly.
+export const selectPendingRewardRedemptions = (s: AppStore) =>
+  s.rewardRedemptions.filter((r) => r.status === 'pending');
+
+// All redemptions (any status) requested by the current user. A different
+// child's redemption is never included, even for an adult+ viewer whose
+// array contains the whole household's rows.
+export const selectRewardRedemptionsForCurrentUser = (s: AppStore) => {
+  const userId = s.user?.id ?? null;
+  if (!userId) return [];
+  return s.rewardRedemptions.filter((r) => r.requestedByProfileId === userId);
+};
+
+// Current user's own redemptions still awaiting review — "waiting for
+// approval" state, for the requesting child's own UI.
+export const selectMyPendingRewardRedemptions = (s: AppStore) =>
+  selectRewardRedemptionsForCurrentUser(s).filter((r) => r.status === 'pending');
+
+export const selectPendingRedemptionCount = (s: AppStore): number =>
+  selectPendingRewardRedemptions(s).length;
+
+// True when the current user can review redemptions and at least one is
+// waiting. Drives visibility of the review section — permission-gated, not
+// role-compared. Mirrors selectHasPendingContributionClaimsToReview exactly.
+export const selectHasPendingRedemptionsToReview = (s: AppStore): boolean =>
+  selectCanApproveRedemption(s) && selectPendingRedemptionCount(s) > 0;

@@ -431,6 +431,7 @@ export const useAppStore = create<AppStore>((rawSet) => {
         rewards:             context.rewards.map(mapRewardRow),
         pointsBalances:      context.pointsBalances.map(mapPointsBalanceRow),
         contributionClaims:  context.contributionClaims.map(mapContributionClaimRow),
+        rewardRedemptions:   context.rewardRedemptions.map(mapRewardRedemptionRow),
 
         activeHouseholdId:     context.activeHouseholdId,
         hasNoHousehold:        context.hasNoHousehold,

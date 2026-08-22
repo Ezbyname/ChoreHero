@@ -94,6 +94,9 @@ export function assertValidHydrationContext(context: HydrationContext): void {
   if (!Array.isArray(context.contributionClaims)) {
     throw new Error('HydrationContext: contributionClaims must be an array.');
   }
+  if (!Array.isArray(context.rewardRedemptions)) {
+    throw new Error('HydrationContext: rewardRedemptions must be an array.');
+  }
   if (!Array.isArray(context.householdMembers)) {
     throw new Error('HydrationContext: householdMembers must be an array.');
   }
@@ -138,6 +141,15 @@ export function assertValidHydrationContext(context: HydrationContext): void {
     if (claim.household_id !== hid) {
       throw new Error(
         `HydrationContext: contributionClaim "${claim.id}" has household_id "${claim.household_id}", ` +
+        `expected "${hid}".`,
+      );
+    }
+  }
+
+  for (const redemption of context.rewardRedemptions) {
+    if (redemption.household_id !== hid) {
+      throw new Error(
+        `HydrationContext: rewardRedemption "${redemption.id}" has household_id "${redemption.household_id}", ` +
         `expected "${hid}".`,
       );
     }
@@ -219,6 +231,11 @@ export function assertPartialHydrationContext(context: HydrationContext): void {
   if (context.contributionClaims.length !== 0) {
     throw new Error(
       'PartialHydrationContext: contributionClaims must be empty when hasNoHousehold is true.',
+    );
+  }
+  if (context.rewardRedemptions.length !== 0) {
+    throw new Error(
+      'PartialHydrationContext: rewardRedemptions must be empty when hasNoHousehold is true.',
     );
   }
   if (context.memberProfiles.length !== 0) {

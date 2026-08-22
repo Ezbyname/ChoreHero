@@ -17,6 +17,7 @@ import {
   getRewardsForHousehold,
   getPointsBalancesForHousehold,
   getContributionClaimsForHousehold,
+  getRewardRedemptionsForHousehold,
 } from '@/lib/repositories';
 import { sortHouseholdCandidatesDeterministically } from '@/guards/hydrationInvariants';
 import type { HydrationContext } from '@/types/hydration';
@@ -250,6 +251,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
         rewards:            [],
         pointsBalances:     [],
         contributionClaims: [],
+        rewardRedemptions:  [],
         activeHouseholdId:  null,
         hasNoHousehold:     true,
       };
@@ -259,13 +261,19 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     // ── Phase 3: Domain (parallel) ───────────────────────────────────────
 
-    const [membersResult, tasksResult, rewardsResult, pointsResult, claimsResult] = await Promise.all([
-      getHouseholdMembers(activeHousehold.id),
-      getTasksForHousehold(activeHousehold.id),
-      getRewardsForHousehold(activeHousehold.id),
-      getPointsBalancesForHousehold(activeHousehold.id),
-      getContributionClaimsForHousehold(activeHousehold.id),
-    ]);
+    const [membersResult, tasksResult, rewardsResult, pointsResult, claimsResult, redemptionsResult] =
+      await Promise.all([
+        getHouseholdMembers(activeHousehold.id),
+        getTasksForHousehold(activeHousehold.id),
+        getRewardsForHousehold(activeHousehold.id),
+        getPointsBalancesForHousehold(activeHousehold.id),
+        getContributionClaimsForHousehold(activeHousehold.id),
+        // Decision 11 (self-or-adult+): one household-scoped call, exactly
+        // mirroring getContributionClaimsForHousehold above — RLS alone
+        // determines whether a child's rows are limited to their own or an
+        // adult+ sees the whole household's, not this fetch.
+        getRewardRedemptionsForHousehold(activeHousehold.id),
+      ]);
 
     if (isStale()) return;
 
@@ -299,6 +307,12 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       setAppDataError('We couldn\'t load contribution claims. Please try again.');
       return;
     }
+    if (redemptionsResult.error) {
+      setAppHydrationState('error', userId);
+      setAppDataErrorCode('load_failed');
+      setAppDataError('We couldn\'t load reward redemptions. Please try again.');
+      return;
+    }
 
     // Separate follow-up fetch: depends on membersResult's profile_ids, so it
     // cannot join the Promise.all above. Failure here degrades to empty
@@ -319,6 +333,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       rewards:            rewardsResult.data,
       pointsBalances:     pointsResult.data,
       contributionClaims: claimsResult.data,
+      rewardRedemptions:  redemptionsResult.data,
       activeHouseholdId:  activeHousehold.id,
       hasNoHousehold:     false,
     };

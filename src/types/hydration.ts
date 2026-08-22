@@ -6,6 +6,7 @@ import type {
   RewardRow,
   PointsBalanceRow,
   ContributionClaimRow,
+  RewardRedemptionRow,
 } from '@/types/supabase';
 
 // Observable states for the app data hydration pipeline.
@@ -32,6 +33,11 @@ export interface HydrationContext {
   rewards:            RewardRow[];
   pointsBalances:     PointsBalanceRow[];
   contributionClaims: ContributionClaimRow[];
+  // Decision 11 (self-or-adult+): a single household-scoped repository call
+  // (getRewardRedemptionsForHousehold), mirroring contributionClaims exactly
+  // — RLS, not this fetch, determines whether a child sees only their own
+  // rows or an adult+ sees the whole household's.
+  rewardRedemptions:  RewardRedemptionRow[];
   activeHouseholdId:  string | null;
   hasNoHousehold:     boolean;
 }
