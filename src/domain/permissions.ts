@@ -40,7 +40,15 @@ export type HouseholdPermission =
 
   // Rewards
   | 'rewards.create'              // create or edit rewards
-  | 'rewards.redeem'              // redeem rewards (spend points)
+  | 'rewards.redeem'              // superseded by the three permissions below
+                                   // (rewards.request_redemption /
+                                   // rewards.approve_redemption /
+                                   // rewards.reject_redemption) — left in
+                                   // place, unused, per the Rewards
+                                   // Redemption Final Implementation Plan
+  | 'rewards.request_redemption'  // request a reward redemption (child only — Decision 4)
+  | 'rewards.approve_redemption'  // approve a pending reward redemption
+  | 'rewards.reject_redemption'   // reject a pending reward redemption
   | 'requests.approve'            // approve point or reward requests
 
   // Contributions (vocabulary for T1.7.x — no runtime flow in T1.6.1)
@@ -58,6 +66,7 @@ const CHILD_PERMISSIONS: readonly HouseholdPermission[] = [
   'tasks.complete',
   'tasks.claim_open',
   'rewards.redeem',
+  'rewards.request_redemption',      // Decision 4: requester = beneficiary = child, always
   'contributions.claim_completed',   // children can submit claims, but cannot self-approve
 ];
 
@@ -71,6 +80,8 @@ const ADULT_PERMISSIONS: readonly HouseholdPermission[] = [
   'contributions.reject_claim',      // adults can reject contribution claims
   'tasks.approve_completion',        // adults can approve a child's completion request
   'tasks.reject_completion',         // adults can reject a child's completion request
+  'rewards.approve_redemption',      // Decision 2: adult/admin/owner may review, never self-redeem
+  'rewards.reject_redemption',
 ];
 
 const ADMIN_PERMISSIONS: readonly HouseholdPermission[] = [

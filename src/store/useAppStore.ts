@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { mockSeed } from '@/mock';
-import type { AppUser, ContributionClaim, Household, HouseholdMember, PointsBalance, Reward, Task, UserRole } from '@/types';
+import type { AppUser, ContributionClaim, Household, HouseholdMember, PointsBalance, Reward, RewardRedemption, Task, UserRole } from '@/types';
 import type { AppHydrationState, HydrationContext } from '@/types/hydration';
-import type { HouseholdMemberRole, TaskRow, RewardRow, PointsBalanceRow, ContributionClaimRow } from '@/types/supabase';
+import type { HouseholdMemberRole, TaskRow, RewardRow, PointsBalanceRow, ContributionClaimRow, RewardRedemptionRow } from '@/types/supabase';
 import {
   isHydrationCommitAllowed,
   assertValidHydrationContext,
@@ -30,6 +30,7 @@ export interface AppState {
   rewards:             Reward[];
   pointsBalances:      PointsBalance[];
   contributionClaims:  ContributionClaim[];
+  rewardRedemptions:   RewardRedemption[];
   isMockHydrated:      boolean;
 
   // ── Supabase auth identity (managed exclusively by AuthBootstrap) ─────────
@@ -80,6 +81,12 @@ interface AppActions {
   // mapping stays inside the store. Used by feature functions to refresh
   // the claims slice after a single mutation, without a full re-hydration.
   setContributionClaimRows: (rows: ContributionClaimRow[]) => void;
+  setRewardRedemptions:  (redemptions: RewardRedemption[]) => void;
+  // Accepts raw DB rows and maps them internally — mirrors setTaskRows.
+  // Used by requestRewardRedemption/approveRewardRedemption/
+  // rejectRewardRedemption to refresh the redemptions slice after a
+  // single mutation, without a full re-hydration.
+  setRewardRedemptionRows: (rows: RewardRedemptionRow[]) => void;
   hydrateFromMockSeed:   () => void;
   resetAppState:         () => void;
 
@@ -126,6 +133,7 @@ const initialState: AppState = {
   rewards:             [],
   pointsBalances:      [],
   contributionClaims:  [],
+  rewardRedemptions:   [],
   isMockHydrated:      false,
 
   authSession:      null,
@@ -231,6 +239,23 @@ function mapContributionClaimRow(c: ContributionClaimRow): ContributionClaim {
   };
 }
 
+function mapRewardRedemptionRow(r: RewardRedemptionRow): RewardRedemption {
+  return {
+    id:                     r.id,
+    householdId:            r.household_id,
+    rewardId:               r.reward_id,
+    requestedByProfileId:   r.requested_by_profile_id,
+    clientRequestId:        r.client_request_id,
+    pointsRequiredSnapshot: r.points_required_snapshot,
+    status:                 r.status,
+    reviewedByProfileId:    r.reviewed_by_profile_id ?? undefined,
+    reviewedAt:             r.reviewed_at ?? undefined,
+    requestedAt:            r.requested_at,
+    createdAt:              r.created_at,
+    updatedAt:              r.updated_at,
+  };
+}
+
 // ============================================================
 // STORE
 // ============================================================
@@ -260,6 +285,9 @@ export const useAppStore = create<AppStore>((rawSet) => {
   setContributionClaims: (claims)    => set({ contributionClaims: claims }),
   setContributionClaimRows: (rows)   =>
     set({ contributionClaims: rows.map(mapContributionClaimRow) }),
+  setRewardRedemptions:     (redemptions) => set({ rewardRedemptions: redemptions }),
+  setRewardRedemptionRows:  (rows)   =>
+    set({ rewardRedemptions: rows.map(mapRewardRedemptionRow) }),
 
   hydrateFromMockSeed: () =>
     set((state) => {
@@ -426,6 +454,7 @@ export const useAppStore = create<AppStore>((rawSet) => {
       rewards:            [],
       pointsBalances:     [],
       contributionClaims: [],
+      rewardRedemptions:  [],
 
       activeHouseholdId:     null,
       hasNoHousehold:        false,

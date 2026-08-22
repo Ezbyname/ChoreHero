@@ -70,6 +70,11 @@ export type ContributionClaimStatus =
   | 'approved'
   | 'rejected';
 
+export type RewardRedemptionStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
 // ============================================================
 // DATABASE TYPE
 // Matches the shape expected by createClient<Database>().
@@ -469,6 +474,34 @@ export interface Database {
         Relationships: [];
       };
       // ----------------------------------------------------------
+      // reward_redemptions
+      // Request/approval workflow (Decision 1). No INSERT/UPDATE/DELETE
+      // grant to anon or authenticated at all (see
+      // supabase/migrations/20260822000000_reward_redemptions.sql) — every
+      // mutation goes through the three SECURITY DEFINER RPCs below.
+      // Insert/Update are `never`, mirroring points_balances/
+      // point_transactions' own "no direct client mutation" convention.
+      // ----------------------------------------------------------
+      reward_redemptions: {
+        Row: {
+          id:                        string;
+          household_id:              string;
+          reward_id:                 string;
+          requested_by_profile_id:   string;
+          client_request_id:         string;
+          points_required_snapshot:  number;
+          status:                    RewardRedemptionStatus;
+          reviewed_by_profile_id:    string | null;
+          reviewed_at:               string | null;
+          requested_at:              string;
+          created_at:                string;
+          updated_at:                string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      // ----------------------------------------------------------
       // household_invites
       // Shareable join codes. Redemption goes through the
       // redeem_household_invite RPC, never a direct table write.
@@ -543,6 +576,25 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
       };
+      request_reward_redemption: {
+        Args: {
+          p_reward_id:         string;
+          p_client_request_id: string;
+        };
+        Returns: Database['public']['Tables']['reward_redemptions']['Row'];
+      };
+      approve_reward_redemption: {
+        Args: {
+          p_redemption_id: string;
+        };
+        Returns: Database['public']['Tables']['reward_redemptions']['Row'];
+      };
+      reject_reward_redemption: {
+        Args: {
+          p_redemption_id: string;
+        };
+        Returns: Database['public']['Tables']['reward_redemptions']['Row'];
+      };
     };
     CompositeTypes: Record<string, never>;
     Enums: {
@@ -555,6 +607,7 @@ export interface Database {
       task_help_request_status: TaskHelpRequestStatus;
       task_help_reason:         TaskHelpReason;
       contribution_claim_status: ContributionClaimStatus;
+      reward_redemption_status:  RewardRedemptionStatus;
     };
   };
 }
@@ -579,3 +632,4 @@ export type ServiceRequestRow   = Database['public']['Tables']['service_requests
 export type TaskHelpRequestRow  = Database['public']['Tables']['task_help_requests']['Row'];
 export type ContributionClaimRow = Database['public']['Tables']['contribution_claims']['Row'];
 export type HouseholdInviteRow   = Database['public']['Tables']['household_invites']['Row'];
+export type RewardRedemptionRow  = Database['public']['Tables']['reward_redemptions']['Row'];

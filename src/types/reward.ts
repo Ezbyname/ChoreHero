@@ -9,16 +9,22 @@ export interface Reward {
 
 export type RewardRedemptionStatus = 'pending' | 'approved' | 'rejected';
 
+// Matches supabase/migrations/20260822000000_reward_redemptions.sql's
+// reward_redemptions table exactly. requestedByProfileId doubles as the
+// beneficiary (Decision 4: requester = beneficiary = child, always).
 export interface RewardRedemption {
-  id:             string;
-  rewardId:       string;
-  userId:         string;
-  householdId:    string;
-  status:         RewardRedemptionStatus;
-  requestedAt:    string;
-  reviewedAt?:    string;
-  reviewedBy?:    string;
-  pointsDeducted?: number;
+  id:                     string;
+  householdId:            string;
+  rewardId:               string;
+  requestedByProfileId:   string;
+  clientRequestId:        string;
+  pointsRequiredSnapshot: number;
+  status:                 RewardRedemptionStatus;
+  reviewedByProfileId?:   string;
+  reviewedAt?:            string;
+  requestedAt:            string;
+  createdAt:              string;
+  updatedAt:              string;
 }
 
 // totalEarned and totalRedeemed are not stored in points_balances (T1.4.4).
