@@ -83,6 +83,19 @@ export async function approveRewardRedemption(
       case NOT_FOUND_CODE:
         return { ok: false, reason: 'not_found' };
       case NOT_PENDING_CODE:
+        // Someone else already reviewed this redemption (or it moved for
+        // any other reason) between this client's last fetch and this
+        // call. Refresh so the UI's next render drops it from the
+        // actionable queue instead of keeping a stale pending item —
+        // same getRewardRedemptionsForHousehold + setRewardRedemptionRows
+        // pair used on the success path below. Best-effort: a refresh
+        // failure here does not change the reported reason.
+        {
+          const refreshedOnStale = await getRewardRedemptionsForHousehold(input.householdId);
+          if (!refreshedOnStale.error) {
+            useAppStore.getState().setRewardRedemptionRows(refreshedOnStale.data);
+          }
+        }
         return { ok: false, reason: 'not_pending' };
       case REWARD_ARCHIVED_CODE:
         return { ok: false, reason: 'reward_archived' };

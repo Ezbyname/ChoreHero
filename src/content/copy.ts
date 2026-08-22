@@ -117,6 +117,20 @@ export const copy = {
     // reward) rather than an everyday retryable error.
     idempotencyConflict: 'Something went wrong with that request. Please try again.',
   },
+  rewardReview: {
+    // Adult/Admin/Owner redemption review UX (parent flow) — distinct
+    // copy from contributionClaims/taskReview above, since these review a
+    // different underlying record (reward_redemptions, not
+    // contribution_claims or tasks.status).
+    reviewSectionTitle: 'Reward requests waiting for you',
+    archivedNotice:     'This reward is no longer offered. You can still decline this request.',
+    notFound:            'That request is no longer available.',
+    notPending:          'Someone already reviewed that request.',
+    approveArchived:     'This reward is no longer offered, so it can\'t be approved. You can still decline it.',
+    approveInsufficientBalance: 'This child no longer has enough points for this reward.',
+    approveError:        'We couldn\'t approve that — please try again.',
+    rejectError:         'We couldn\'t send that back — please try again.',
+  },
   auth: {
     // Welcome screen
     welcomeTitle:    'Welcome to ChoreHero',

@@ -5,11 +5,13 @@ import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { copy } from '@/content/copy';
-import { ContributionClaimAdapter, TaskAdapter } from '@/domain/adapters';
+import { ContributionClaimAdapter, RewardRedemptionAdapter, TaskAdapter } from '@/domain/adapters';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
+import { approveRewardRedemption } from '@/features/rewards/approveRewardRedemption';
+import { rejectRewardRedemption } from '@/features/rewards/rejectRewardRedemption';
 import { approveTaskCompletion } from '@/features/tasks/approveTaskCompletion';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
@@ -28,10 +30,13 @@ import {
   selectCurrentMemberRole,
   selectCurrentUser,
   selectHasPendingContributionClaimsToReview,
+  selectHasPendingRedemptionsToReview,
+  selectRewardRedemptions,
+  selectRewards,
   selectTasks,
 } from '@/store/selectors';
 import { colors, radius, spacing, typography } from '@/theme';
-import type { ContributionClaim, HouseholdMember, Task } from '@/types';
+import type { ContributionClaim, HouseholdMember, Reward, RewardRedemption, Task } from '@/types';
 
 function isToday(isoString: string): boolean {
   const d   = new Date(isoString);
@@ -172,6 +177,101 @@ function TaskReviewSection({ tasks, members, householdId, role }: TaskReviewSect
   );
 }
 
+// ── Reward redemption review section (parent flow) ────────────────────────────
+// Reviews reward_redemptions.status = 'pending' directly — a different
+// underlying record from ContributionReviewSection/TaskReviewSection above.
+// approve_reward_redemption/reject_reward_redemption remain the
+// authoritative mutation boundary; this section only calls them and
+// reflects the result. Only rendered for a privileged (owner/admin/adult)
+// viewer with at least one pending redemption (selectHasPendingRedemptionsToReview
+// already combines both conditions) — a child never sees this section at
+// all, matching "Adult Request UI Must Not Appear"'s sibling requirement
+// for review.
+
+interface RedemptionReviewSectionProps {
+  redemptions: RewardRedemption[]; // pending only — caller filters, mirrors tasksNeedingReview
+  rewards:     Reward[];           // the full household array, including archived — never
+                                    // RewardsScreen's activeRewards filter (Decision 7:
+                                    // an archived reward's existing PENDING redemption must
+                                    // stay reviewable).
+  members:     HouseholdMember[];
+  householdId: string;
+  role:        string | null;
+  reviewerId:  string;
+}
+
+function RedemptionReviewSection({
+  redemptions,
+  rewards,
+  members,
+  householdId,
+  role,
+  reviewerId,
+}: RedemptionReviewSectionProps) {
+  const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
+  const [feedback, setFeedback]                   = useState<string | null>(null);
+
+  const rewardById = useMemo(() => new Map(rewards.map((r) => [r.id, r])), [rewards]);
+
+  // Archived-reward messaging is applied here, after the pure adapter
+  // runs — mirrors how todayActivities below already post-processes
+  // TaskAdapter's output with a copy-derived override, rather than giving
+  // the adapter itself a copy/i18n dependency.
+  const activities = useMemo(
+    () =>
+      redemptions.map((r) => {
+        const reward     = rewardById.get(r.rewardId);
+        const isArchived = reward != null && !reward.isActive;
+        const activity    = RewardRedemptionAdapter.toFamilyActivity(r, reward);
+        return isArchived ? { ...activity, description: copy.rewardReview.archivedNotice } : activity;
+      }),
+    [redemptions, rewardById],
+  );
+
+  async function handleAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingActivityId) return;
+    if (action !== 'approve' && action !== 'decline') return;
+
+    setPendingActivityId(activity.id);
+    setFeedback(null);
+
+    const result = action === 'approve'
+      ? await approveRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId })
+      : await rejectRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId });
+
+    if (!result.ok) {
+      setFeedback(
+        result.reason === 'not_found'
+          ? copy.rewardReview.notFound
+          : result.reason === 'not_pending'
+            ? copy.rewardReview.notPending
+            : result.reason === 'reward_archived'
+              ? copy.rewardReview.approveArchived
+              : result.reason === 'insufficient_balance'
+                ? copy.rewardReview.approveInsufficientBalance
+                : action === 'approve'
+                  ? copy.rewardReview.approveError
+                  : copy.rewardReview.rejectError,
+      );
+    }
+
+    setPendingActivityId(null);
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{copy.rewardReview.reviewSectionTitle}</Text>
+      <ActivityList
+        activities={activities}
+        members={members}
+        onAction={handleAction}
+        pendingActivityId={pendingActivityId}
+      />
+      {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+    </View>
+  );
+}
+
 // ── Contribution claim submission (child flow) ────────────────────────────────
 
 interface ClaimFormProps {
@@ -244,7 +344,26 @@ export function TodayScreen() {
   const hasReviewSection = useAppStore(selectHasPendingContributionClaimsToReview);
   const canClaim          = useAppStore(selectCanClaimContribution);
   const canApproveTaskCompletion = useAppStore(selectCanApproveTaskCompletion);
+  const rewardRedemptions        = useAppStore(selectRewardRedemptions);
+  const rewards                   = useAppStore(selectRewards);
+  const hasRedemptionReviewSection = useAppStore(selectHasPendingRedemptionsToReview);
   const members   = household?.members ?? [];
+
+  // Only status='pending' rows belong in the actionable review queue
+  // (APPROVED/REJECTED rows must not remain actionable). Deliberately not
+  // filtered by reward.isActive here — Decision 7: an existing PENDING
+  // redemption for a reward that is later archived must stay reviewable
+  // (reject remains available even though approve does not). rewards is
+  // the full household array from selectRewards (includes archived rows
+  // for an adult+ viewer per rewards_select_household_scoped's own RLS —
+  // never RewardsScreen's activeRewards filter, which would silently drop
+  // them from this queue). Visibility itself is Decision-11 RLS's job,
+  // already applied before this array ever reaches the store (Slice 4's
+  // hydration wiring) — no additional household filtering happens here.
+  const pendingRedemptions = useMemo(
+    () => rewardRedemptions.filter((r) => r.status === 'pending'),
+    [rewardRedemptions],
+  );
 
   // selectContributionClaims returns the raw, stable store array; filtering
   // must happen here (memoized), not inside a Zustand selector. A selector
@@ -394,6 +513,17 @@ export function TodayScreen() {
             members={members}
             householdId={household.id}
             role={role}
+          />
+        )}
+
+        {hasRedemptionReviewSection && household && (
+          <RedemptionReviewSection
+            redemptions={pendingRedemptions}
+            rewards={rewards}
+            members={members}
+            householdId={household.id}
+            role={role}
+            reviewerId={user?.id ?? ''}
           />
         )}
 

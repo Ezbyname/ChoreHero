@@ -56,6 +56,17 @@ export async function rejectRewardRedemption(
       case NOT_FOUND_CODE:
         return { ok: false, reason: 'not_found' };
       case NOT_PENDING_CODE:
+        // Mirrors approveRewardRedemption.ts's identical handling: someone
+        // else already reviewed this redemption — refresh so the UI drops
+        // it from the actionable queue instead of keeping a stale pending
+        // item. Best-effort: a refresh failure does not change the
+        // reported reason.
+        {
+          const refreshedOnStale = await getRewardRedemptionsForHousehold(input.householdId);
+          if (!refreshedOnStale.error) {
+            useAppStore.getState().setRewardRedemptionRows(refreshedOnStale.data);
+          }
+        }
         return { ok: false, reason: 'not_pending' };
       default:
         return { ok: false, reason: 'failed' };
