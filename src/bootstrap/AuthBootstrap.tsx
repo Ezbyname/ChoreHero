@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { useAppStore } from '@/store/useAppStore';
+import { registerAutoRefreshLifecycle } from '@/lib/authAutoRefreshLifecycle';
 
 interface AuthBootstrapProps {
   children: React.ReactNode;
@@ -31,6 +32,13 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
 
     setAuthLoading(true);
 
+    // No-op on Web (see authAutoRefreshLifecycle.ts); on native, pauses/
+    // resumes Supabase's token auto-refresh with AppState so it doesn't run
+    // continuously while backgrounded. Registered/cleaned up alongside the
+    // auth listener below — AuthBootstrap remains the single auth-lifecycle
+    // owner for both concerns, not a second competing owner.
+    const cleanupAutoRefresh = registerAutoRefreshLifecycle();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         switch (event) {
@@ -54,6 +62,7 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
 
     return () => {
       subscription.unsubscribe();
+      cleanupAutoRefresh();
     };
   }, []);
 
