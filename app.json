@@ -20,6 +20,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "89d38a6a-8b4f-4d0f-9385-9cb92cc5f465"
+      }
+    },
+    "owner": "ezbynames-team"
   }
 }
