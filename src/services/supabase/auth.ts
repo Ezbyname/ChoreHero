@@ -80,3 +80,13 @@ export async function resendSignupEmail(
   const { error } = await supabase.auth.resend({ type: 'signup', email });
   return { error };
 }
+
+// Exact codes confirmed against the installed @supabase/auth-js's own
+// ErrorCode union (lib/error-codes.d.ts) — not guessed. Distinguishing this
+// specific case is safe: rate limiting applies per-IP/per-project, not
+// conditioned on whether a given email is registered, so surfacing it does
+// not weaken resetPasswordForEmail's own enumeration-safe design (it never
+// reveals "no such user" either way).
+export function isRateLimitError(error: Pick<AuthError, 'code'> | null | undefined): boolean {
+  return error?.code === 'over_email_send_rate_limit' || error?.code === 'over_request_rate_limit';
+}

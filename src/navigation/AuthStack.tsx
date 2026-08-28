@@ -16,7 +16,9 @@ export function AuthStack() {
         <Stack.Screen name="AuthWelcome"    component={AuthWelcomeScreen} />
         <Stack.Screen name="Login"          component={LoginScreen} />
         <Stack.Screen name="Signup"         component={SignupScreen} />
-        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+        <Stack.Screen name="ForgotPassword">
+          {({ navigation }) => <ForgotPasswordScreen onBack={() => navigation.navigate('Login')} />}
+        </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
   );

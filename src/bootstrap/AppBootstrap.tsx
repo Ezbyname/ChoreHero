@@ -8,12 +8,14 @@ import { classifyAuthRedirect, getAuthRedirectResult, type AuthRedirectResult } 
 import { clearAuthRecoveryLink, useAuthRecoveryLink } from '@/lib/useAuthRecoveryLink';
 import { useAuthRecoveryExit } from '@/lib/useAuthRecoveryExit';
 import { extractRecoveryTokens, parseLinkingUrl } from '@/lib/authRecoveryLinkParsing';
+import { resolveAppBootstrapView } from '@/lib/appBootstrapView';
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { colors } from '@/theme';
 import { EmailConfirmedScreen } from '@/screens/EmailConfirmedScreen';
 import { ResetPasswordScreen } from '@/screens/ResetPasswordScreen';
 import { RecoveryLinkExpiredScreen } from '@/screens/RecoveryLinkExpiredScreen';
+import { ForgotPasswordScreen } from '@/screens/auth/ForgotPasswordScreen';
 
 // AppBootstrap is the root of the non-navigation tree.
 // Rendering order:
@@ -55,6 +57,15 @@ export function AppBootstrap() {
   const [nativeRecoveryResult, setNativeRecoveryResult] = React.useState<AuthRedirectResult | null>(null);
   const [isResolvingNativeRecovery, setIsResolvingNativeRecovery] = React.useState(false);
 
+  // Sub-state for the 'error' (expired/invalid/already-used link) branch
+  // only. Deliberately separate from onExitRecovery: "Request a new link"
+  // must always show the request form, regardless of whether a valid auth
+  // session happens to already exist — see RecoveryLinkExpiredScreen.tsx's
+  // comment for the bug this fixes. Reset to 'expired' whenever a fresh
+  // error result arrives (below), so a leftover 'requestReset' from an
+  // earlier interaction can't leak into a new, unrelated expired link.
+  const [expiredRecoveryMode, setExpiredRecoveryMode] = React.useState<'expired' | 'requestReset'>('expired');
+
   React.useEffect(() => {
     if (!nativeRecoveryUrl) return;
 
@@ -78,10 +89,16 @@ export function AppBootstrap() {
 
         if (cancelled) return;
         setIsResolvingNativeRecovery(false);
+        if (!sessionEstablished) {
+          setExpiredRecoveryMode('expired');
+        }
         setNativeRecoveryResult(
           sessionEstablished ? result : { type: 'error', errorCode: 'session_establish_failed' },
         );
       } else if (result.type !== 'none') {
+        if (result.type === 'error') {
+          setExpiredRecoveryMode('expired');
+        }
         setNativeRecoveryResult(result);
       }
 
@@ -101,44 +118,43 @@ export function AppBootstrap() {
   const redirectResult: AuthRedirectResult =
     webRedirectResult.type !== 'none' ? webRedirectResult : (nativeRecoveryResult ?? { type: 'none' });
 
-  if (isResolvingNativeRecovery) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  // Which screen this tab/app shows next — see appBootstrapView.ts for the
+  // full decision table. Extracted to a pure function specifically so this
+  // decision (in particular the N1.3 corrective-patch fix: "Request a new
+  // link" must always mean requesting a new link, never silently falling
+  // through to an existing authenticated session) is directly unit-tested,
+  // not just asserted from reading the JSX.
+  const bootstrapView = resolveAppBootstrapView(isResolvingNativeRecovery, redirectResult, expiredRecoveryMode);
 
-  // This tab/app landed directly from a Supabase auth email link. Which
-  // screen it gets depends on which kind of link:
-  //   'recovery' -> ResetPasswordScreen (the user can set a new password —
-  //                 a real session already exists at this point; see that
-  //                 screen's own comment for why)
-  //   'error'    -> RecoveryLinkExpiredScreen (expired/invalid/used link —
-  //                 previously this fell through to a normal, wrong app
-  //                 boot; now it's classified and handled explicitly)
-  //   'other'    -> EmailConfirmedScreen, unchanged (signup confirmation,
-  //                 invite, magic link — this tab's session is incidental,
-  //                 the user signs in for real on whichever device they
-  //                 actually use ChoreHero from)
-  //   'none'     -> falls through to the normal boot below, unchanged
-  if (redirectResult.type === 'recovery') {
-    return <ResetPasswordScreen onExitRecovery={onExitRecovery} />;
+  switch (bootstrapView.view) {
+    case 'loading':
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      );
+    case 'resetPassword':
+      return <ResetPasswordScreen onExitRecovery={onExitRecovery} />;
+    case 'recoveryExpired':
+      return <RecoveryLinkExpiredScreen onRequestNewLink={() => setExpiredRecoveryMode('requestReset')} />;
+    case 'requestNewLink':
+      // Its own "Back to Sign in" link is a deliberate, explicit "never
+      // mind" action at that point, so it's fine for that one to fall
+      // through to the normal onExitRecovery behavior (Product Decision
+      // A's same "prefer an existing valid session" logic applies there
+      // too, unlike the primary "Request a new link" CTA above it).
+      return <ForgotPasswordScreen onBack={onExitRecovery} />;
+    case 'emailConfirmed':
+      return <EmailConfirmedScreen />;
+    case 'normalBoot':
+      return (
+        <AuthBootstrap>
+          <AppDataBootstrap>
+            <AuthGate />
+          </AppDataBootstrap>
+        </AuthBootstrap>
+      );
   }
-  if (redirectResult.type === 'error') {
-    return <RecoveryLinkExpiredScreen onExitRecovery={onExitRecovery} />;
-  }
-  if (redirectResult.type === 'other') {
-    return <EmailConfirmedScreen />;
-  }
-
-  return (
-    <AuthBootstrap>
-      <AppDataBootstrap>
-        <AuthGate />
-      </AppDataBootstrap>
-    </AuthBootstrap>
-  );
 }
 
 const styles = StyleSheet.create({

@@ -185,6 +185,11 @@ export const copy = {
     // actually registered — never confirm or deny that.
     resetLinkSentTitle: 'Check your email',
     resetLinkSentBody:  'If that email is registered, we\'ve sent a link to reset your password.',
+    // Genuine request errors only (rate-limited, network, malformed input)
+    // — never shown for "email not registered", which resetPasswordForEmail
+    // never distinguishes in the first place.
+    resetLinkRequestError: 'We couldn\'t send the reset link. Please try again.',
+    resetLinkRateLimited:  'Too many reset requests. Please wait a little and try again.',
 
     // Resend (shared by SignupScreen's and ForgotPasswordScreen's success states)
     resendEmailButton:    'Resend email',

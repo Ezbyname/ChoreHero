@@ -12,20 +12,21 @@ import { colors, spacing, typography } from '@/theme';
 // This screen renders inside AppBootstrap's early-return branch, the same
 // place EmailConfirmedScreen does — there is no NavigationContainer/
 // AuthStack mounted yet at this point, so it cannot use react-navigation's
-// navigate(). `onExitRecovery` (a full-page reload on Web, a local state
-// transition on native — see useAuthRecoveryExit.ts/.native.ts) instead
-// leaves this screen and lands the user on the normal AuthStack, from
-// which they can reach ForgotPasswordScreen through the ordinary Login
-// link exactly like any other visitor. On native this button previously
-// did nothing at all (guarded window access, silently inert) — this makes
-// it a real, working action there too.
-export function RecoveryLinkExpiredScreen({ onExitRecovery }: { onExitRecovery: () => void }) {
+// navigate(). `onRequestNewLink` is a local AppBootstrap state transition
+// into its recovery-mode ForgotPasswordScreen — deliberately NOT the
+// generic "exit recovery" mechanism (useAuthRecoveryExit): that mechanism
+// falls through to whatever the current auth state happens to be, which on
+// a device with an existing valid session silently skipped straight to the
+// authenticated app instead of ever showing a request-a-new-link form —
+// a real bug this fixes. "Request a new link" must always mean requesting
+// a new link, independent of whether a session happens to already exist.
+export function RecoveryLinkExpiredScreen({ onRequestNewLink }: { onRequestNewLink: () => void }) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>{copy.auth.recoveryLinkExpiredTitle}</Text>
         <Text style={styles.body}>{copy.auth.recoveryLinkExpiredBody}</Text>
-        <TouchableOpacity style={styles.button} onPress={onExitRecovery} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.button} onPress={onRequestNewLink} activeOpacity={0.8}>
           <Text style={styles.buttonText}>{copy.auth.forgotPasswordLink}</Text>
         </TouchableOpacity>
       </View>

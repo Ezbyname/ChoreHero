@@ -1,5 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -11,20 +9,24 @@ import {
   View,
 } from 'react-native';
 import { copy } from '@/content/copy';
-import type { AuthStackParamList } from '@/navigation/types';
-import { sendPasswordResetEmail } from '@/services/supabase/auth';
+import { isRateLimitError, sendPasswordResetEmail } from '@/services/supabase/auth';
 import { useResendCooldown } from '@/lib/useResendCooldown';
 import { colors, spacing, typography } from '@/theme';
 
-type Nav = NativeStackNavigationProp<AuthStackParamList, 'ForgotPassword'>;
-
+// `onBack` is a plain callback rather than useNavigation() so this screen
+// can be rendered both inside AuthStack's NavigationContainer (the normal
+// case) and inside AppBootstrap's early-return recovery branch (N1.3
+// corrective patch — "Request a new link" from an expired recovery link),
+// which has no NavigationContainer mounted at all. See AuthStack.tsx for
+// how the normal case supplies onBack, and AppBootstrap.tsx for the
+// recovery-mode case.
+//
 // Enumeration-safe by construction: the success state's copy
 // (resetLinkSentTitle/Body) is shown identically whether or not the
 // submitted email is actually registered — resetPasswordForEmail() itself
-// never reveals this, and this screen never attempts to infer it either.
-export function ForgotPasswordScreen() {
-  const navigation = useNavigation<Nav>();
-
+// never reveals this. A genuine request error (rate-limited, network,
+// malformed input) is a separate, safe-to-show concern — see handleSend.
+export function ForgotPasswordScreen({ onBack }: { onBack: () => void }) {
   const [email,        setEmail]        = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError,   setLocalError]   = useState<string | null>(null);
@@ -44,12 +46,15 @@ export function ForgotPasswordScreen() {
     setIsSubmitting(true);
 
     try {
-      await sendPasswordResetEmail(normalizedEmail);
-      // No error branch shown to the user regardless of the result — an
-      // enumeration-safe flow must not distinguish "email not found" from
-      // "email sent" in its UI, matching resetPasswordForEmail's own
-      // enumeration-safe API design (it does not return a distinguishable
-      // error for "no such user").
+      const { error } = await sendPasswordResetEmail(normalizedEmail);
+      if (error) {
+        // A real request error (rate-limited, network, malformed input) —
+        // distinct from "email not registered", which resetPasswordForEmail
+        // never reveals in the first place, so surfacing this specific
+        // error is not an enumeration regression.
+        setLocalError(isRateLimitError(error) ? copy.auth.resetLinkRateLimited : copy.auth.resetLinkRequestError);
+        return;
+      }
       setShowSuccess(true);
       startCooldown();
     } finally {
@@ -60,7 +65,12 @@ export function ForgotPasswordScreen() {
   async function handleResend() {
     if (secondsRemaining > 0) return;
     const normalizedEmail = email.trim().toLowerCase();
-    await sendPasswordResetEmail(normalizedEmail);
+    setLocalError(null);
+    const { error } = await sendPasswordResetEmail(normalizedEmail);
+    if (error) {
+      setLocalError(isRateLimitError(error) ? copy.auth.resetLinkRateLimited : copy.auth.resetLinkRequestError);
+      return;
+    }
     startCooldown();
   }
 
@@ -70,6 +80,12 @@ export function ForgotPasswordScreen() {
         <View style={styles.successContent}>
           <Text style={styles.title}>{copy.auth.resetLinkSentTitle}</Text>
           <Text style={styles.subtitle}>{copy.auth.resetLinkSentBody}</Text>
+
+          {localError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{localError}</Text>
+            </View>
+          ) : null}
 
           <TouchableOpacity
             style={[styles.button, secondsRemaining > 0 && styles.buttonDisabled]}
@@ -84,7 +100,7 @@ export function ForgotPasswordScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Login')}>
+          <TouchableOpacity style={styles.linkRow} onPress={onBack}>
             <Text style={styles.linkText}>{copy.auth.backToSignIn}</Text>
           </TouchableOpacity>
         </View>
@@ -134,7 +150,7 @@ export function ForgotPasswordScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Login')} disabled={isSubmitting}>
+          <TouchableOpacity style={styles.linkRow} onPress={onBack} disabled={isSubmitting}>
             <Text style={styles.linkText}>{copy.auth.backToSignIn}</Text>
           </TouchableOpacity>
         </View>
