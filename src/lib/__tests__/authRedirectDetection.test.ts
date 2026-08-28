@@ -6,6 +6,14 @@ test('no markers at all -> none', () => {
   assert.deepEqual(classifyAuthRedirect('', ''), { type: 'none' });
 });
 
+// authRedirectCapture.native.ts always supplies exactly these two empty
+// strings (no window.location on native — see that file's comment), so
+// this is also the proof that native auth-redirect detection safely
+// resolves to 'none' without ever reading a browser API.
+test('native capture values (always empty) classify as none', () => {
+  assert.deepEqual(classifyAuthRedirect('', ''), { type: 'none' });
+});
+
 test('signup confirmation hash -> other', () => {
   assert.deepEqual(
     classifyAuthRedirect('#access_token=abc&type=signup', ''),

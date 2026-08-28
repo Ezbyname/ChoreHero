@@ -5,15 +5,13 @@
 // inside a component's render) risks losing the race and seeing an already-
 // cleaned URL.
 //
-// `typeof window !== 'undefined'` is web-only in this Expo app (iOS/Android
-// have no `window` global) — equivalent to the previous `Platform.OS ===
-// 'web'` check, without importing react-native's `Platform`. That import is
-// deliberately avoided: react-native's entry point uses Flow syntax that
-// only Metro/Babel can parse, so importing it here would break this module
-// under the plain Node `node:test` runner used for unit tests.
-const isWeb = typeof window !== 'undefined';
-const capturedHash   = isWeb ? window.location.hash   : '';
-const capturedSearch = isWeb ? window.location.search : '';
+// The actual browser-location read lives in authRedirectCapture.ts/.native.ts
+// (a Metro platform-file pair) rather than a `typeof window` runtime check
+// here: on React Native, `window` is aliased to `global` (see that file's
+// comment), so a `typeof window !== 'undefined'` guard would incorrectly
+// read as "web" on native too, and the subsequent `window.location` access
+// throws — a real, previously-shipped native boot crash this split fixes.
+import { capturedHash, capturedSearch } from '@/lib/authRedirectCapture';
 
 export type AuthRedirectResult =
   | { type: 'none' }
@@ -22,8 +20,8 @@ export type AuthRedirectResult =
   | { type: 'error'; errorCode: string | undefined };
 
 // Pure function (hash/search passed in) so it's unit-testable without
-// touching window.location — the module-level constants above are the
-// only place real browser state enters this file.
+// touching window.location — authRedirectCapture.ts/.native.ts is the
+// only place real browser state enters this module.
 export function classifyAuthRedirect(hash: string, search: string): AuthRedirectResult {
   // Supabase's documented behavior for an expired/invalid/already-used
   // email link is a redirect carrying error=/error_code=/error_description=
