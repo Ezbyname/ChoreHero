@@ -199,8 +199,11 @@ export const copy = {
     updatingPassword:        'Updating…',
     resetPasswordError:      'We couldn\'t update your password. Please try again.',
     passwordUpdatedTitle:    'Password updated',
-    passwordUpdatedBody:     'You can sign in with your new password now.',
-    goToSignIn:              'Go to Sign in',
+    // Product Decision A (N1.3): a successful reset keeps the user's
+    // recovery session — they're already signed in, not sent back to
+    // Sign In — so this must not imply a further sign-in step is needed.
+    passwordUpdatedBody:     'Your password has been updated.',
+    continueToApp:           'Continue to ChoreHero',
 
     // Recovery link failure states (AppBootstrap routes here — see Task 4)
     recoveryLinkExpiredTitle: 'That link has expired',

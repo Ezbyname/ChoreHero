@@ -14,21 +14,19 @@ import { colors, spacing, typography } from '@/theme';
 
 // Landing screen for a followed password-recovery email link (see
 // AppBootstrap.tsx's 'recovery' branch). A real Supabase session already
-// exists at this point — supabase-js establishes one automatically from
-// the recovery link's token before this component ever renders (this is
-// the same mechanism AuthBootstrap.tsx's existing PASSWORD_RECOVERY case
-// already relies on) — so updateUser({ password }) can be called directly,
-// no separate sign-in step. See resetPassword.ts for the password-policy
-// resolution (provider-authoritative; no application policy introduced).
+// exists at this point (Web: supabase-js's own automatic URL-session
+// detection; native: AppBootstrap explicitly awaits setSession() before
+// ever rendering this screen — see useAuthRecoveryLink.native.ts) — so
+// updateUser({ password }) can be called directly, no separate sign-in
+// step. See resetPassword.ts for the password-policy resolution
+// (provider-authoritative; no application policy introduced).
 //
-// After a successful update, this screen shows a static success state
-// with a manual "Go to Sign in" action rather than auto-navigating into
-// the authenticated app — mirroring EmailConfirmedScreen's own documented
-// convention that a redirect-landing tab's session is incidental; the
-// user signs in for real on whichever device they actually use ChoreHero
-// from. This is an application of that existing precedent, not a new one,
-// and is unrelated to the password-policy question above.
-export function ResetPasswordScreen() {
+// Product Decision A (N1.3): after a successful update, the recovery
+// session is kept — the user is already signed in, not sent back to Sign
+// In. `onExitRecovery` (platform-specific: a page reload on Web, a local
+// state transition on native — see useAuthRecoveryExit.ts/.native.ts)
+// leaves this screen and continues into the normal authenticated boot.
+export function ResetPasswordScreen({ onExitRecovery }: { onExitRecovery: () => void }) {
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword]  = useState('');
   const [isSubmitting,    setIsSubmitting]    = useState(false);
@@ -57,20 +55,14 @@ export function ResetPasswordScreen() {
     }
   }
 
-  function handleGoToSignIn() {
-    if (typeof window !== 'undefined') {
-      window.location.href = window.location.origin;
-    }
-  }
-
   if (showSuccess) {
     return (
       <View style={styles.container}>
         <View style={styles.successContent}>
           <Text style={styles.title}>{copy.auth.passwordUpdatedTitle}</Text>
           <Text style={styles.subtitle}>{copy.auth.passwordUpdatedBody}</Text>
-          <TouchableOpacity style={styles.button} onPress={handleGoToSignIn} activeOpacity={0.8}>
-            <Text style={styles.buttonText}>{copy.auth.goToSignIn}</Text>
+          <TouchableOpacity style={styles.button} onPress={onExitRecovery} activeOpacity={0.8}>
+            <Text style={styles.buttonText}>{copy.auth.continueToApp}</Text>
           </TouchableOpacity>
         </View>
       </View>

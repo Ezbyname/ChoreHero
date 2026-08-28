@@ -12,23 +12,20 @@ import { colors, spacing, typography } from '@/theme';
 // This screen renders inside AppBootstrap's early-return branch, the same
 // place EmailConfirmedScreen does — there is no NavigationContainer/
 // AuthStack mounted yet at this point, so it cannot use react-navigation's
-// navigate(). "Request a new link" instead does a full-page redirect to
-// this app's own root, landing the user on the normal AuthStack, from
+// navigate(). `onExitRecovery` (a full-page reload on Web, a local state
+// transition on native — see useAuthRecoveryExit.ts/.native.ts) instead
+// leaves this screen and lands the user on the normal AuthStack, from
 // which they can reach ForgotPasswordScreen through the ordinary Login
-// link (Task 8) exactly like any other visitor.
-export function RecoveryLinkExpiredScreen() {
-  function handleRequestNewLink() {
-    if (typeof window !== 'undefined') {
-      window.location.href = window.location.origin;
-    }
-  }
-
+// link exactly like any other visitor. On native this button previously
+// did nothing at all (guarded window access, silently inert) — this makes
+// it a real, working action there too.
+export function RecoveryLinkExpiredScreen({ onExitRecovery }: { onExitRecovery: () => void }) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>{copy.auth.recoveryLinkExpiredTitle}</Text>
         <Text style={styles.body}>{copy.auth.recoveryLinkExpiredBody}</Text>
-        <TouchableOpacity style={styles.button} onPress={handleRequestNewLink} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.button} onPress={onExitRecovery} activeOpacity={0.8}>
           <Text style={styles.buttonText}>{copy.auth.forgotPasswordLink}</Text>
         </TouchableOpacity>
       </View>

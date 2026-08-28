@@ -1,5 +1,6 @@
 ﻿import type { AuthError, AuthResponse } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { getPasswordResetRedirectUrl } from '@/lib/passwordResetRedirect';
 
 // Auth user !== ChoreHero app user.
 //
@@ -59,7 +60,14 @@ export async function sendPasswordResetEmail(
   if (!supabase) {
     return { error: null };
   }
-  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  // On Web this resolves to undefined, producing the exact same request as
+  // calling resetPasswordForEmail(email) with no options at all — see
+  // passwordResetRedirect.ts. On native it's the current build's own
+  // registered scheme, so the recovery email can deep-link back into this
+  // app instead of a Web-only URL.
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: getPasswordResetRedirectUrl(),
+  });
   return { error };
 }
 
