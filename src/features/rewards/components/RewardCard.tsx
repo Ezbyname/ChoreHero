@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { copy } from '@/content/copy';
+import { ConfirmRewardRequestModal } from '@/features/rewards/components/ConfirmRewardRequestModal';
 import { requestRewardRedemption, type RequestRewardRedemptionResult } from '@/features/rewards/requestRewardRedemption';
 import { isRedemptionRequestAvailable, resolveClientRequestId, nextClientRequestId } from '@/features/rewards/rewardRequestUx';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
@@ -69,9 +70,14 @@ export function RewardCard({
   const remaining          = requiredPoints - viewerBalance;
   const isPending           = pendingRedemption !== undefined;
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback]         = useState<string | null>(null);
-  const pendingRequestIdRef             = useRef<string | null>(null);
+  const [isSubmitting, setIsSubmitting]     = useState(false);
+  const [feedback, setFeedback]             = useState<string | null>(null);
+  // A3 — Confirm Before Redeem. Gates the existing handleRequest below —
+  // opening/cancelling this never itself calls handleRequest, so Cancel is
+  // guaranteed to never invoke the request path (see ConfirmRewardRequestModal
+  // for why a real Modal is used here instead of Alert.alert).
+  const [isConfirmVisible, setIsConfirmVisible] = useState(false);
+  const pendingRequestIdRef                 = useRef<string | null>(null);
 
   function feedbackFor(result: Extract<RequestRewardRedemptionResult, { ok: false }>): string {
     switch (result.reason) {
@@ -125,6 +131,19 @@ export function RewardCard({
     setIsSubmitting(false);
   }
 
+  // A3 — Confirm Before Redeem. The confirmation is only a gate in front
+  // of the existing handleRequest — client_request_id resolution,
+  // isSubmitting, the RPC call, and error/success handling all remain
+  // exactly as they were, unmoved and untouched.
+  function handleConfirmRequest() {
+    setIsConfirmVisible(false);
+    void handleRequest();
+  }
+
+  function handleCancelRequest() {
+    setIsConfirmVisible(false);
+  }
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>{reward.title}</Text>
@@ -165,7 +184,7 @@ export function RewardCard({
                 styles.requestButton,
                 !requestAvailable && styles.requestButtonDisabled,
               ]}
-              onPress={handleRequest}
+              onPress={() => setIsConfirmVisible(true)}
               disabled={!requestAvailable}
               activeOpacity={0.8}
             >
@@ -179,6 +198,14 @@ export function RewardCard({
           </>
         )
       )}
+
+      <ConfirmRewardRequestModal
+        visible={isConfirmVisible}
+        rewardTitle={reward.title}
+        requiredPoints={requiredPoints}
+        onConfirm={handleConfirmRequest}
+        onCancel={handleCancelRequest}
+      />
     </View>
   );
 }
