@@ -1,9 +1,19 @@
-import { supabaseUrl } from '@/lib/supabaseConfig';
 import { QA_PROJECT_REF, PRODUCTION_PROJECT_REF, extractProjectRef } from '@/lib/supabaseProjectRef';
 
 // QA-01 — Runtime Build Identification. Observability only — nothing in
 // this module or its consumers (About screen, QA badge, copy action) may
 // influence auth, routing, backend selection, or any other app behavior.
+//
+// This file is deliberately kept free of any import that isn't safe under
+// this repo's plain Node test runner (scripts/test/aliasLoader.mjs) — in
+// particular, no `expo-application` import here. expo-application is a
+// native module whose platform-specific implementation file only resolves
+// correctly through Metro's platform-extension resolution; importing it
+// (even transitively) breaks every test that reaches this file (confirmed
+// empirically: ERR_MODULE_NOT_FOUND for ExpoApplication.ts, the bare
+// filename Metro's resolver would otherwise pick a platform variant for).
+// The real, native-touching singleton lives in currentBuildInfo.ts
+// instead — this file only exports pure, explicitly-parameterized logic.
 //
 // Backend classification is derived independently from the actual
 // resolved EXPO_PUBLIC_SUPABASE_URL (reusing config/appVariant.ts's own
@@ -74,18 +84,37 @@ function environmentLabelFor(variant: string | null, backend: BackendTarget): st
 }
 
 export interface RuntimeBuildInfoInput {
-  appVersion:  string | undefined;
-  appVariant:  string | undefined;
-  buildNumber: string | undefined;
-  gitSha:      string | undefined;
-  supabaseUrl: string | undefined;
+  appVersion:         string | undefined;
+  appVariant:         string | undefined;
+  // QA-01.2 — the real native artifact identifier (Android versionCode /
+  // iOS CFBundleVersion), read once per app launch from expo-application.
+  // Always null on Web — see resolveBuildNumber's own comment for why
+  // that must never be papered over with a fabricated number.
+  nativeBuildVersion: string | null;
+  buildNumber:        string | undefined;
+  gitSha:             string | undefined;
+  supabaseUrl:        string | undefined;
+}
+
+// QA-01.2 — Build field priority: the real installed native artifact
+// number (Application.nativeBuildVersion) first — it reflects the binary
+// actually running, not a value baked in at bundle time — then the
+// EXPO_PUBLIC_BUILD_NUMBER channel (kept for architectural symmetry with
+// the other EXPO_PUBLIC_* fields, though nothing currently sets it), then
+// 'local'. Web's nativeBuildVersion is always null (no native artifact to
+// report), so Web/local dev correctly falls through to 'local' rather
+// than ever fabricating a number — see runtimeBuildInfo.test.ts's
+// "Web does not fabricate a numeric native build" case.
+function resolveBuildNumber(nativeBuildVersion: string | null, fallback: string | undefined): string {
+  if (nativeBuildVersion) return nativeBuildVersion;
+  return fallback?.trim() || 'local';
 }
 
 // Pure — takes its raw inputs explicitly rather than reading
 // process.env/imports internally, so it's directly testable with
 // synthetic values (matching this repo's established convention, e.g.
 // sortRewardsForDisplay). The real singleton below supplies the actual
-// build-time-inlined values.
+// build-time-inlined/native values.
 export function buildRuntimeBuildInfo(input: RuntimeBuildInfoInput): RuntimeBuildInfo {
   const backendTarget = classifyBackendTarget(input.supabaseUrl);
   const appVersion    = input.appVersion?.trim() || 'unknown';
@@ -96,7 +125,7 @@ export function buildRuntimeBuildInfo(input: RuntimeBuildInfoInput): RuntimeBuil
     appName:          appNameForVariant(variant),
     appVersion,
     displayVersion:   displayVersionForVariant(appVersion, variant),
-    buildNumber:      input.buildNumber?.trim() || 'local',
+    buildNumber:      resolveBuildNumber(input.nativeBuildVersion, input.buildNumber),
     appVariant:       variant,
     environmentLabel: environmentLabelFor(variant, backendTarget),
     gitSha:           rawSha || 'unknown',
@@ -124,14 +153,3 @@ export function formatBuildInfoForCopy(info: RuntimeBuildInfo): string {
     `Backend: ${info.backendTarget}`,
   ].join('\n');
 }
-
-// The actual value the app displays — built once at module load from the
-// real build-time-inlined EXPO_PUBLIC_* values (set in app.config.ts) and
-// the already-runtime-safe supabaseUrl (src/lib/supabaseConfig.ts).
-export const runtimeBuildInfo: RuntimeBuildInfo = buildRuntimeBuildInfo({
-  appVersion:  process.env.EXPO_PUBLIC_APP_VERSION,
-  appVariant:  process.env.EXPO_PUBLIC_APP_VARIANT,
-  buildNumber: process.env.EXPO_PUBLIC_BUILD_NUMBER,
-  gitSha:      process.env.EXPO_PUBLIC_GIT_SHA,
-  supabaseUrl,
-});

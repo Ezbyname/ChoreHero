@@ -6,7 +6,9 @@ import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { copy } from '@/content/copy';
 import { HouseholdInvitesSection } from '@/features/household/components/HouseholdInvitesSection';
-import { formatBuildInfoForCopy, runtimeBuildInfo } from '@/lib/runtimeBuildInfo';
+import { currentBuildInfo } from '@/lib/currentBuildInfo';
+import { formatAccountType } from '@/lib/formatAccountType';
+import { formatBuildInfoForCopy } from '@/lib/runtimeBuildInfo';
 import { signOut } from '@/services/supabase/auth';
 import {
   selectAuthUserEmail,
@@ -45,7 +47,7 @@ function AboutSection() {
 
   async function handleCopy() {
     try {
-      const ok = await Clipboard.setStringAsync(formatBuildInfoForCopy(runtimeBuildInfo));
+      const ok = await Clipboard.setStringAsync(formatBuildInfoForCopy(currentBuildInfo));
       setCopyFeedback(ok ? copy.about.copySuccess : copy.about.copyFailure);
     } catch {
       setCopyFeedback(copy.about.copyFailure);
@@ -57,23 +59,23 @@ function AboutSection() {
       <Text style={styles.sectionTitle}>{copy.about.sectionTitle}</Text>
 
       <View style={styles.infoRow}>
-        <Text style={styles.appName}>{runtimeBuildInfo.appName}</Text>
+        <Text style={styles.appName}>{currentBuildInfo.appName}</Text>
 
         <View style={styles.buildInfoGrid}>
           <Text style={styles.buildInfoLabel}>{copy.about.versionLabel}</Text>
-          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.displayVersion}</Text>
+          <Text style={styles.buildInfoValue}>{currentBuildInfo.displayVersion}</Text>
 
           <Text style={styles.buildInfoLabel}>{copy.about.buildLabel}</Text>
-          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.buildNumber}</Text>
+          <Text style={styles.buildInfoValue}>{currentBuildInfo.buildNumber}</Text>
 
           <Text style={styles.buildInfoLabel}>{copy.about.environmentLabel}</Text>
-          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.environmentLabel}</Text>
+          <Text style={styles.buildInfoValue}>{currentBuildInfo.environmentLabel}</Text>
 
           <Text style={styles.buildInfoLabel}>{copy.about.commitLabel}</Text>
-          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.shortGitSha}</Text>
+          <Text style={styles.buildInfoValue}>{currentBuildInfo.shortGitSha}</Text>
 
           <Text style={styles.buildInfoLabel}>{copy.about.backendLabel}</Text>
-          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.backendTarget}</Text>
+          <Text style={styles.buildInfoValue}>{currentBuildInfo.backendTarget}</Text>
         </View>
 
         <TouchableOpacity style={styles.copyButton} onPress={handleCopy} activeOpacity={0.8}>
@@ -97,6 +99,7 @@ export function SettingsScreen() {
   const user                  = useAppStore(selectCurrentUser);
   const role                  = useAppStore(selectCurrentMemberRole);
   const canInviteMembers      = useAppStore(selectCanInviteMembers);
+  const accountType            = formatAccountType(role);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [localError,   setLocalError]   = useState<string | null>(null);
@@ -156,6 +159,20 @@ export function SettingsScreen() {
         {isAuthenticated && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{copy.auth.account}</Text>
+
+            {/* QA-01.2 — Account type: display-only translation of the same
+                selectCurrentMemberRole value HouseholdInvitesSection above
+                already reads for permission purposes; never a second role
+                source, and hidden entirely (not fabricated) when the role
+                genuinely cannot be resolved. */}
+            {accountType ? (
+              <View style={styles.infoRow}>
+                <View style={styles.accountTypeRow}>
+                  <Text style={styles.infoLabel}>{copy.auth.accountTypeLabel}</Text>
+                  <Text style={styles.infoValue}>{accountType}</Text>
+                </View>
+              </View>
+            ) : null}
 
             {(currentUserName || authUserEmail) ? (
               <View style={styles.infoRow}>
@@ -227,6 +244,11 @@ const styles = StyleSheet.create({
   infoLabel: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  accountTypeRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
   },
   errorBox: {
     backgroundColor: '#FEE2E2',

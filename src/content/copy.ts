@@ -252,7 +252,10 @@ export const copy = {
     emailConfirmedBody:  'You can close this page now and sign in from the app.',
 
     // Settings / logout
-    account:     'Account',
+    account:         'Account',
+    // QA-01.2 — exact locked label, distinct from "Role"/"User role"/
+    // "Member role"/"Account role".
+    accountTypeLabel: 'Account type',
     signedInAs:  'Signed in as',
     signOut:     'Sign out',
     signingOut:  'Signing out…',

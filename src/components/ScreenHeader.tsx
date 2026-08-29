@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { formatQaBadgeText, runtimeBuildInfo } from '@/lib/runtimeBuildInfo';
+import { currentBuildInfo } from '@/lib/currentBuildInfo';
+import { formatQaBadgeText } from '@/lib/runtimeBuildInfo';
 import { colors, spacing, typography } from '@/theme';
 
 interface ScreenHeaderProps {
@@ -15,14 +16,14 @@ interface ScreenHeaderProps {
 // additive text, no touch handling, no effect on layout of anything below
 // it, no effect on navigation/auth/startup. Full diagnostics stay in
 // Settings → About; this is identification only. Never shown outside QA
-// (runtimeBuildInfo.appVariant is only ever 'qa' for an actual QA-variant
+// (currentBuildInfo.appVariant is only ever 'qa' for an actual QA-variant
 // build — see config/appVariant.ts).
 function QaBadge() {
-  if (runtimeBuildInfo.appVariant !== 'qa') return null;
+  if (currentBuildInfo.appVariant !== 'qa') return null;
 
   return (
     <View style={styles.qaBadge}>
-      <Text style={styles.qaBadgeText}>{formatQaBadgeText(runtimeBuildInfo)}</Text>
+      <Text style={styles.qaBadgeText}>{formatQaBadgeText(currentBuildInfo)}</Text>
     </View>
   );
 }

@@ -1,57 +1,65 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildRuntimeBuildInfo, classifyBackendTarget, formatBuildInfoForCopy, formatQaBadgeText } from '@/lib/runtimeBuildInfo';
+import { buildRuntimeBuildInfo, classifyBackendTarget, formatBuildInfoForCopy, formatQaBadgeText, type RuntimeBuildInfoInput } from '@/lib/runtimeBuildInfo';
 
 const QA_URL = 'https://umzfyedxnvtmfnwldwtq.supabase.co';
 const PRODUCTION_URL = 'https://aqjiweueckwnkczcyedu.supabase.co';
 
+// nativeBuildVersion defaults to null (Web/local — the common case for
+// every pre-existing test below, none of which cares about native build
+// resolution specifically; the native-build-priority tests further down
+// override it explicitly).
+function info(overrides: Partial<RuntimeBuildInfoInput> & Pick<RuntimeBuildInfoInput, 'appVersion' | 'appVariant' | 'buildNumber' | 'gitSha' | 'supabaseUrl'>) {
+  return buildRuntimeBuildInfo({ nativeBuildVersion: null, ...overrides });
+}
+
 test('1. canonical Product version resolves correctly', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined, gitSha: undefined, supabaseUrl: undefined,
   });
-  assert.equal(info.appVersion, '1.0.0');
+  assert.equal(result.appVersion, '1.0.0');
 });
 
 test('2. QA display version becomes "<version> QA"', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
   });
-  assert.equal(info.displayVersion, '1.0.0 QA');
+  assert.equal(result.displayVersion, '1.0.0 QA');
 });
 
 test('3. Production display version remains "<version>"', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'production', buildNumber: undefined, gitSha: undefined, supabaseUrl: PRODUCTION_URL,
   });
-  assert.equal(info.displayVersion, '1.0.0');
+  assert.equal(result.displayVersion, '1.0.0');
 });
 
 test('4. QA app name becomes "ChoreHero QA"', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
   });
-  assert.equal(info.appName, 'ChoreHero QA');
+  assert.equal(result.appName, 'ChoreHero QA');
 });
 
 test('5. Production app name becomes "ChoreHero"', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'production', buildNumber: undefined, gitSha: undefined, supabaseUrl: PRODUCTION_URL,
   });
-  assert.equal(info.appName, 'ChoreHero');
+  assert.equal(result.appName, 'ChoreHero');
 });
 
 test('6. QA badge eligibility = true for QA (appVariant === "qa")', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
   });
-  assert.equal(info.appVariant === 'qa', true);
+  assert.equal(result.appVariant === 'qa', true);
 });
 
 test('7. QA badge eligibility = false for Production', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'production', buildNumber: undefined, gitSha: undefined, supabaseUrl: PRODUCTION_URL,
   });
-  assert.equal(info.appVariant === 'qa', false);
+  assert.equal(result.appVariant === 'qa', false);
 });
 
 test('8. known QA backend -> QA', () => {
@@ -73,47 +81,47 @@ test('11. unknown/unrecognized target -> UNKNOWN', () => {
 });
 
 test('12. Git SHA shortens predictably', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined,
     gitSha: 'c0597fd338ead01654fa6c9173940d0d91471262', supabaseUrl: undefined,
   });
-  assert.equal(info.gitSha, 'c0597fd338ead01654fa6c9173940d0d91471262');
-  assert.equal(info.shortGitSha, 'c0597fd');
+  assert.equal(result.gitSha, 'c0597fd338ead01654fa6c9173940d0d91471262');
+  assert.equal(result.shortGitSha, 'c0597fd');
 });
 
 test('13. missing SHA -> unknown', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined, gitSha: undefined, supabaseUrl: undefined,
   });
-  assert.equal(info.gitSha, 'unknown');
-  assert.equal(info.shortGitSha, 'unknown');
+  assert.equal(result.gitSha, 'unknown');
+  assert.equal(result.shortGitSha, 'unknown');
 });
 
-test('14. missing build -> approved local fallback', () => {
-  const info = buildRuntimeBuildInfo({
+test('14. missing build (Web/no native artifact, no EXPO_PUBLIC_BUILD_NUMBER) -> approved local fallback', () => {
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined, gitSha: undefined, supabaseUrl: undefined,
   });
-  assert.equal(info.buildNumber, 'local');
+  assert.equal(result.buildNumber, 'local');
 });
 
 test('15. copied diagnostic formatter uses the canonical runtime model (round-trips every field)', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd338ead0', supabaseUrl: QA_URL,
   });
-  const copied = formatBuildInfoForCopy(info);
-  assert.ok(copied.includes(info.appName));
-  assert.ok(copied.includes(info.displayVersion));
-  assert.ok(copied.includes(info.buildNumber));
-  assert.ok(copied.includes(info.environmentLabel));
-  assert.ok(copied.includes(info.shortGitSha));
-  assert.ok(copied.includes(info.backendTarget));
+  const copied = formatBuildInfoForCopy(result);
+  assert.ok(copied.includes(result.appName));
+  assert.ok(copied.includes(result.displayVersion));
+  assert.ok(copied.includes(result.buildNumber));
+  assert.ok(copied.includes(result.environmentLabel));
+  assert.ok(copied.includes(result.shortGitSha));
+  assert.ok(copied.includes(result.backendTarget));
 });
 
 test('16. QA copied text includes QA identity', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
   });
-  const copied = formatBuildInfoForCopy(info);
+  const copied = formatBuildInfoForCopy(result);
   assert.equal(
     copied,
     'ChoreHero QA\nVersion: 1.0.0 QA\nBuild: 28\nEnvironment: QA\nCommit: c0597fd\nBackend: QA',
@@ -121,10 +129,10 @@ test('16. QA copied text includes QA identity', () => {
 });
 
 test('17. Production copied text does not leak QA identity', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'production', buildNumber: '34', gitSha: 'abc1234', supabaseUrl: PRODUCTION_URL,
   });
-  const copied = formatBuildInfoForCopy(info);
+  const copied = formatBuildInfoForCopy(result);
   assert.ok(!copied.toLowerCase().includes('qa'));
   assert.equal(
     copied,
@@ -133,59 +141,110 @@ test('17. Production copied text does not leak QA identity', () => {
 });
 
 test('18. copied text contains no secrets/config keys/tokens', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
   });
-  const copied = formatBuildInfoForCopy(info);
+  const copied = formatBuildInfoForCopy(result);
   assert.ok(!copied.includes('supabase.co'));
   assert.ok(!copied.includes(QA_URL));
   assert.ok(!/key|token|secret|anon/i.test(copied));
 });
 
 test('19. Product version remains independent of environment', () => {
-  const qaInfo = buildRuntimeBuildInfo({
+  const qaInfo = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
   });
-  const prodInfo = buildRuntimeBuildInfo({
+  const prodInfo = info({
     appVersion: '1.0.0', appVariant: 'production', buildNumber: undefined, gitSha: undefined, supabaseUrl: PRODUCTION_URL,
   });
   assert.equal(qaInfo.appVersion, prodInfo.appVersion);
 });
 
 test('20. diagnostics remain read-only/pure: identical inputs always produce an identical, side-effect-free result', () => {
-  const input = {
-    appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
+  const input: RuntimeBuildInfoInput = {
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: null, buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
   };
   assert.deepEqual(buildRuntimeBuildInfo(input), buildRuntimeBuildInfo(input));
 });
 
 test('environmentLabel falls back to backend classification when appVariant is unset (e.g. today\'s Vercel Web build)', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined, gitSha: undefined, supabaseUrl: PRODUCTION_URL,
   });
-  assert.equal(info.appVariant, null);
-  assert.equal(info.environmentLabel, 'Production');
-  assert.equal(info.backendTarget, 'PRODUCTION');
+  assert.equal(result.appVariant, null);
+  assert.equal(result.environmentLabel, 'Production');
+  assert.equal(result.backendTarget, 'PRODUCTION');
 });
 
 test('formatQaBadgeText uses "b<n>" for a real numeric build number', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
   });
-  assert.equal(formatQaBadgeText(info), 'QA • v1.0.0 • b28');
+  assert.equal(formatQaBadgeText(result), 'QA • v1.0.0 • b28');
 });
 
 test('formatQaBadgeText omits the "b" prefix for the local/unknown fallback (regression: "blocal")', () => {
-  const localInfo = buildRuntimeBuildInfo({
+  const localInfo = info({
     appVersion: '1.0.0', appVariant: 'qa', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
   });
   assert.equal(formatQaBadgeText(localInfo), 'QA • v1.0.0 • local');
 });
 
 test('mock mode (no Supabase configured) classifies as MOCK end to end', () => {
-  const info = buildRuntimeBuildInfo({
+  const result = info({
     appVersion: '1.0.0', appVariant: undefined, buildNumber: undefined, gitSha: undefined, supabaseUrl: undefined,
   });
-  assert.equal(info.backendTarget, 'MOCK');
-  assert.equal(info.environmentLabel, 'Mock');
+  assert.equal(result.backendTarget, 'MOCK');
+  assert.equal(result.environmentLabel, 'Mock');
+});
+
+// ── QA-01.2 — native build identity (§27 of the QA-01.2 authorization) ───────
+
+test('native build identity 1/2. native build version is preferred over EXPO_PUBLIC_BUILD_NUMBER when available', () => {
+  const result = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: '28', buildNumber: '999', gitSha: undefined, supabaseUrl: QA_URL,
+  });
+  assert.equal(result.buildNumber, '28');
+});
+
+test('native build identity 2. native build "28" displays as Build 28 in the copy block', () => {
+  const result = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: '28', buildNumber: undefined, gitSha: 'c0597fd', supabaseUrl: QA_URL,
+  });
+  assert.ok(formatBuildInfoForCopy(result).includes('Build: 28'));
+});
+
+test('native build identity 3. QA badge with a real native numeric build uses "b28"', () => {
+  const result = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: '28', buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
+  });
+  assert.equal(formatQaBadgeText(result), 'QA • v1.0.0 • b28');
+});
+
+test('native build identity 4. no native build (null) safely falls through to the EXPO_PUBLIC_BUILD_NUMBER / local fallback chain', () => {
+  const withEnvFallback = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: null, buildNumber: '5', gitSha: undefined, supabaseUrl: QA_URL,
+  });
+  assert.equal(withEnvFallback.buildNumber, '5');
+
+  const withLocalFallback = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: 'qa', nativeBuildVersion: null, buildNumber: undefined, gitSha: undefined, supabaseUrl: QA_URL,
+  });
+  assert.equal(withLocalFallback.buildNumber, 'local');
+});
+
+test('native build identity 5. Web does not fabricate a numeric native build (nativeBuildVersion is always null there)', () => {
+  const result = buildRuntimeBuildInfo({
+    appVersion: '1.0.0', appVariant: undefined, nativeBuildVersion: null, buildNumber: undefined, gitSha: undefined, supabaseUrl: undefined,
+  });
+  assert.equal(result.buildNumber, 'local');
+  assert.notEqual(result.buildNumber, '0');
+});
+
+test('Account type does not affect build identity (build fields unaffected by any account-type-shaped input)', () => {
+  const result = info({
+    appVersion: '1.0.0', appVariant: 'qa', buildNumber: '28', gitSha: 'c0597fd', supabaseUrl: QA_URL,
+  });
+  assert.ok(!('accountType' in result));
+  assert.ok(!formatBuildInfoForCopy(result).toLowerCase().includes('account'));
 });

@@ -11,14 +11,33 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 import { getVariantIdentity, resolveVariant, validateBackendTarget } from './config/appVariant';
 import pkg from './package.json';
 
-// QA-01 — Runtime Build Identification. Resolved once per config
-// evaluation, at build/export/start time (this whole file is build-time
-// only, same rule as config/appVariant.ts) — never shelled out to from
-// runtime application code. Failure (no .git present, e.g. a tarball-only
-// build environment, or git unavailable) is expected and safe: falls
-// back to undefined here, which src/lib/runtimeBuildInfo.ts turns into
-// 'unknown' rather than crashing or fabricating a value.
+// QA-01 / QA-01.2 — Runtime Build Identification. Resolved once per
+// config evaluation, at build/export/start time (this whole file is
+// build-time only, same rule as config/appVariant.ts) — never shelled
+// out to from runtime application code.
+//
+// Priority 1: EAS_BUILD_GIT_COMMIT_HASH — the source revision EAS Build
+// itself provides for a real EAS Build job. Preferred because it doesn't
+// depend on `.git` metadata actually being present/complete inside
+// whatever container image the build runs in — confirmed (by direct
+// inspection of the real eas-cli package source during QA-01.1's
+// investigation) that eas-cli's own client never references a git-SHA
+// env var itself, so this can only be verified against a real EAS build,
+// not from this sandbox; using it when present costs nothing since it's
+// checked first and is a no-op fallback-wise when absent.
+//
+// Priority 2: `git rev-parse HEAD` — works locally, and should work for
+// the live Vercel Web build (which retains real git history), and for
+// any EAS build where the checkout does include `.git`.
+//
+// Failure of both (no EAS var, no `.git`/git unavailable) is expected
+// and safe: falls back to undefined here, which
+// src/lib/runtimeBuildInfo.ts turns into 'unknown' rather than crashing
+// or fabricating a value.
 function resolveGitSha(): string | undefined {
+  const easProvidedSha = process.env.EAS_BUILD_GIT_COMMIT_HASH;
+  if (easProvidedSha) return easProvidedSha;
+
   try {
     const sha = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     return sha || undefined;
