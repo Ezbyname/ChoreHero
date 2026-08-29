@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -76,6 +77,7 @@ function AboutSection() {
         </View>
 
         <TouchableOpacity style={styles.copyButton} onPress={handleCopy} activeOpacity={0.8}>
+          <Ionicons name="copy-outline" size={16} color={colors.primary} style={styles.copyButtonIcon} />
           <Text style={styles.copyButtonText}>{copy.about.copyButton}</Text>
         </TouchableOpacity>
 
@@ -276,11 +278,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   copyButton: {
+    flexDirection:   'row',
     borderWidth:     1,
     borderColor:     colors.borderSoft,
     borderRadius:    10,
     paddingVertical: spacing.sm,
     alignItems:      'center',
+    justifyContent:  'center',
+  },
+  copyButtonIcon: {
+    marginRight: spacing.xs,
   },
   copyButtonText: {
     ...typography.body,
