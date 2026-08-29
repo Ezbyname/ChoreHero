@@ -1,9 +1,11 @@
+import * as Clipboard from 'expo-clipboard';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { copy } from '@/content/copy';
 import { HouseholdInvitesSection } from '@/features/household/components/HouseholdInvitesSection';
+import { formatBuildInfoForCopy, runtimeBuildInfo } from '@/lib/runtimeBuildInfo';
 import { signOut } from '@/services/supabase/auth';
 import {
   selectAuthUserEmail,
@@ -33,6 +35,56 @@ import { colors, spacing, typography } from '@/theme';
  *   - Calls signOut() wrapper — does not clear Zustand manually.
  *   - AuthBootstrap receives SIGNED_OUT → clearAuthSession → AuthGate switches tree.
  */
+// QA-01 — Runtime Build Identification. Read-only diagnostics only — see
+// src/lib/runtimeBuildInfo.ts for the canonical model and copy formatter
+// this section and the Copy action both consume (no duplicated
+// formatting logic here).
+function AboutSection() {
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  async function handleCopy() {
+    try {
+      const ok = await Clipboard.setStringAsync(formatBuildInfoForCopy(runtimeBuildInfo));
+      setCopyFeedback(ok ? copy.about.copySuccess : copy.about.copyFailure);
+    } catch {
+      setCopyFeedback(copy.about.copyFailure);
+    }
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{copy.about.sectionTitle}</Text>
+
+      <View style={styles.infoRow}>
+        <Text style={styles.appName}>{runtimeBuildInfo.appName}</Text>
+
+        <View style={styles.buildInfoGrid}>
+          <Text style={styles.buildInfoLabel}>{copy.about.versionLabel}</Text>
+          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.displayVersion}</Text>
+
+          <Text style={styles.buildInfoLabel}>{copy.about.buildLabel}</Text>
+          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.buildNumber}</Text>
+
+          <Text style={styles.buildInfoLabel}>{copy.about.environmentLabel}</Text>
+          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.environmentLabel}</Text>
+
+          <Text style={styles.buildInfoLabel}>{copy.about.commitLabel}</Text>
+          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.shortGitSha}</Text>
+
+          <Text style={styles.buildInfoLabel}>{copy.about.backendLabel}</Text>
+          <Text style={styles.buildInfoValue}>{runtimeBuildInfo.backendTarget}</Text>
+        </View>
+
+        <TouchableOpacity style={styles.copyButton} onPress={handleCopy} activeOpacity={0.8}>
+          <Text style={styles.copyButtonText}>{copy.about.copyButton}</Text>
+        </TouchableOpacity>
+
+        {copyFeedback ? <Text style={styles.copyFeedbackText}>{copyFeedback}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 export function SettingsScreen() {
   const isAuthenticated      = useAppStore(selectIsAuthenticated);
   const authUserEmail        = useAppStore(selectAuthUserEmail);
@@ -132,6 +184,9 @@ export function SettingsScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* ── About / Runtime build identification (QA-01) ─────────────────── */}
+        <AboutSection />
       </ScrollView>
     </Screen>
   );
@@ -195,5 +250,47 @@ const styles = StyleSheet.create({
     ...typography.body,
     color:      colors.textSecondary,
     fontWeight: '500',
+  },
+  appName: {
+    ...typography.body,
+    color:        colors.textPrimary,
+    fontWeight:   '600',
+    marginBottom: spacing.sm,
+  },
+  buildInfoGrid: {
+    flexDirection:   'row',
+    flexWrap:        'wrap',
+    marginBottom:    spacing.md,
+  },
+  buildInfoLabel: {
+    ...typography.caption,
+    color:    colors.textMuted,
+    width:    '40%',
+    marginBottom: spacing.xs,
+  },
+  buildInfoValue: {
+    ...typography.caption,
+    color:        colors.textPrimary,
+    fontWeight:   '600',
+    width:        '60%',
+    marginBottom: spacing.xs,
+  },
+  copyButton: {
+    borderWidth:     1,
+    borderColor:     colors.borderSoft,
+    borderRadius:    10,
+    paddingVertical: spacing.sm,
+    alignItems:      'center',
+  },
+  copyButtonText: {
+    ...typography.body,
+    color:      colors.primary,
+    fontWeight: '600',
+  },
+  copyFeedbackText: {
+    ...typography.caption,
+    color:     colors.textMuted,
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
 });

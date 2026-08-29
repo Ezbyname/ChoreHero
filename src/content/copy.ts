@@ -26,6 +26,19 @@ export const copy = {
     // Shown when hydrated but household is unexpectedly null (invariant guard).
     noHousehold:      'No household',
   },
+  // QA-01 — Runtime Build Identification. Read-only diagnostics only —
+  // see src/lib/runtimeBuildInfo.ts.
+  about: {
+    sectionTitle:      'About',
+    versionLabel:      'Version',
+    buildLabel:        'Build',
+    environmentLabel:  'Environment',
+    commitLabel:       'Commit',
+    backendLabel:      'Backend',
+    copyButton:        'Copy build info',
+    copySuccess:       'Build info copied',
+    copyFailure:       'Couldn\'t copy build info. Please try again.',
+  },
   emptyStates: {
     today:         'Everything is clear for now.',
     myTasks:       'Nothing on your plate right now — nicely done.',

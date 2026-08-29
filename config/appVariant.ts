@@ -8,6 +8,14 @@
 // Runtime application code (src/) must never import this — it never ships
 // inside the RN bundle.
 
+// QA-01 — Runtime Build Identification. The project-ref constants and
+// extractProjectRef live in src/lib/supabaseProjectRef.ts, not here, so
+// runtime code (src/) can reach them without importing this build-time-
+// only file — re-exported below so this file's own public API (and the
+// existing appVariant.test.ts imports) are unaffected by the move.
+import { QA_PROJECT_REF, PRODUCTION_PROJECT_REF, extractProjectRef } from '../src/lib/supabaseProjectRef';
+export { extractProjectRef };
+
 export type AppVariant = 'development' | 'qa' | 'production';
 
 const APP_VARIANTS: readonly AppVariant[] = ['development', 'qa', 'production'];
@@ -19,11 +27,6 @@ export type VariantIdentity = {
   scheme: string;
   expectedBackendProjectRef: string;
 };
-
-// Not secrets — a Supabase project ref is the subdomain segment of that
-// project's own public URL. No credential of any kind lives in this file.
-const QA_PROJECT_REF = 'umzfyedxnvtmfnwldwtq';
-const PRODUCTION_PROJECT_REF = 'aqjiweueckwnkczcyedu';
 
 // One identity record per variant, feeding both Android and iOS from the
 // same source so the two platforms can never drift apart.
@@ -69,24 +72,6 @@ export function resolveVariant(raw: string): VariantResolution {
 
 export function getVariantIdentity(variant: AppVariant): VariantIdentity {
   return VARIANT_IDENTITIES[variant];
-}
-
-// Returns the project ref (the subdomain segment) for a well-formed
-// https://<ref>.supabase.co URL, or null for anything else — missing,
-// unparsable, wrong host suffix, or a ref containing characters outside
-// [a-z0-9]. Never throws.
-export function extractProjectRef(supabaseUrl: string | undefined): string | null {
-  if (!supabaseUrl) return null;
-
-  let url: URL;
-  try {
-    url = new URL(supabaseUrl);
-  } catch {
-    return null;
-  }
-
-  const match = url.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i);
-  return match ? match[1].toLowerCase() : null;
 }
 
 export type TargetValidation = { ok: true } | { ok: false; reason: string };

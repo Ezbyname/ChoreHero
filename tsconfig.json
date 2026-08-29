@@ -11,7 +11,14 @@
       "@/navigation/*":  ["src/navigation/*"],
       "@/theme/*":       ["src/theme/*"],
       "@/content/*":     ["src/content/*"]
-    }
+    },
+    // QA-01 — Runtime Build Identification. Without this, TypeScript's
+    // implicit @types auto-inclusion picks up @types/node's ambient
+    // globals (process, etc. — already relied on throughout src/) but not
+    // its subpath module declarations (e.g. 'child_process', needed by
+    // app.config.ts's git-SHA resolution) — confirmed empirically: this
+    // one line is what fixes it, isolated by testing with/without it.
+    "types": ["node"]
   },
   "exclude": ["e2e", "playwright.config.ts", "node_modules", "**/__tests__/**", "scripts/test"]
 }
