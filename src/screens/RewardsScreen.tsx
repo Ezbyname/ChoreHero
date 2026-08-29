@@ -7,6 +7,7 @@ import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { RewardCard } from '@/features/rewards/components/RewardCard';
 import { createReward } from '@/features/rewards/createReward';
+import { sortRewardsForDisplay } from '@/features/rewards/sortRewards';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanCreateRewards,
@@ -154,7 +155,11 @@ export function RewardsScreen() {
   const rewardRedemptions      = useAppStore(selectRewardRedemptions);
   const members        = household?.members ?? [];
 
-  const activeRewards = rewards.filter((r) => r.isActive);
+  // A2 — Reward Sorting. Sorting is a separate, later step from the
+  // existing active/archived visibility filter above it, not folded into
+  // it — see sortRewards.ts for the locked, viewer-independent ordering
+  // contract (requiredPoints ASC -> title ASC -> id ASC).
+  const activeRewards = sortRewardsForDisplay(rewards.filter((r) => r.isActive));
 
   // Never assume pointsBalances[0] is the viewer's own balance — a member
   // with no balance row yet (e.g. a child who hasn't earned points) reads
