@@ -4,6 +4,7 @@ import { AuthBootstrap } from '@/bootstrap/AuthBootstrap';
 import { AppDataBootstrap } from '@/bootstrap/AppDataBootstrap';
 import { AuthGate } from '@/navigation/AuthGate';
 import { useAppStore } from '@/store/useAppStore';
+import { selectAuthUserEmail } from '@/store/selectors';
 import { classifyAuthRedirect, getAuthRedirectResult, type AuthRedirectResult } from '@/lib/authRedirectDetection';
 import { clearAuthRecoveryLink, useAuthRecoveryLink } from '@/lib/useAuthRecoveryLink';
 import { useAuthRecoveryExit } from '@/lib/useAuthRecoveryExit';
@@ -26,6 +27,11 @@ import { ForgotPasswordScreen } from '@/screens/auth/ForgotPasswordScreen';
 export function AppBootstrap() {
   const isMockHydrated      = useAppStore((s) => s.isMockHydrated);
   const hydrateFromMockSeed = useAppStore((s) => s.hydrateFromMockSeed);
+  // A1 — Recovery Email Prefill. Reliable existing store state — never
+  // derived from the recovery URL/token itself. null whenever no session
+  // exists (e.g. this device was never authenticated), which is the normal,
+  // expected case, not an error.
+  const authUserEmail = useAppStore(selectAuthUserEmail);
 
   // Mock seed hydration runs only in dev/mock mode (no Supabase credentials).
   // When Supabase is configured, AppDataBootstrap handles all data loading.
@@ -143,7 +149,9 @@ export function AppBootstrap() {
       // through to the normal onExitRecovery behavior (Product Decision
       // A's same "prefer an existing valid session" logic applies there
       // too, unlike the primary "Request a new link" CTA above it).
-      return <ForgotPasswordScreen onBack={onExitRecovery} />;
+      // initialEmail: convenience prefill only — see ForgotPasswordScreen's
+      // own comment for why passing the current store value here is safe.
+      return <ForgotPasswordScreen onBack={onExitRecovery} initialEmail={authUserEmail ?? undefined} />;
     case 'emailConfirmed':
       return <EmailConfirmedScreen />;
     case 'normalBoot':

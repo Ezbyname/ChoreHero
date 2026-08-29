@@ -11,6 +11,7 @@ import {
 import { copy } from '@/content/copy';
 import { isRateLimitError, sendPasswordResetEmail } from '@/services/supabase/auth';
 import { useResendCooldown } from '@/lib/useResendCooldown';
+import { resolveInitialEmail } from '@/lib/resolveInitialEmail';
 import { colors, spacing, typography } from '@/theme';
 
 // `onBack` is a plain callback rather than useNavigation() so this screen
@@ -21,13 +22,37 @@ import { colors, spacing, typography } from '@/theme';
 // how the normal case supplies onBack, and AppBootstrap.tsx for the
 // recovery-mode case.
 //
+// `initialEmail` (A1 — Recovery Email Prefill) is convenience only, never
+// identity binding: AppBootstrap passes it only when a reliable current-
+// session email already exists (selectAuthUserEmail — nothing derived from
+// the recovery URL/token), and it seeds a plain, fully-editable useState —
+// not synced on later re-renders. That's deliberately safe here, not an
+// oversight: AppBootstrap's recovery branches never mount AuthBootstrap, so
+// the store's authUser (and thus this value) cannot change while this
+// screen is showing in recovery mode — this component mounts exactly once
+// for that transition (a distinct element type replacing
+// RecoveryLinkExpiredScreen at the same tree position), so there is no
+// later value to sync to, and no risk of a useEffect silently overwriting
+// something the user already typed.
+//
+// resolveInitialEmail itself lives in src/lib/resolveInitialEmail.ts, not
+// here — Node's --experimental-strip-types test loader rejects .tsx files
+// outright, so a pure helper needed by the plain Node test runner cannot
+// live inside this .tsx screen file.
+
 // Enumeration-safe by construction: the success state's copy
 // (resetLinkSentTitle/Body) is shown identically whether or not the
 // submitted email is actually registered — resetPasswordForEmail() itself
 // never reveals this. A genuine request error (rate-limited, network,
 // malformed input) is a separate, safe-to-show concern — see handleSend.
-export function ForgotPasswordScreen({ onBack }: { onBack: () => void }) {
-  const [email,        setEmail]        = useState('');
+export function ForgotPasswordScreen({
+  onBack,
+  initialEmail,
+}: {
+  onBack: () => void;
+  initialEmail?: string;
+}) {
+  const [email,        setEmail]        = useState(resolveInitialEmail(initialEmail));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError,   setLocalError]   = useState<string | null>(null);
   const [showSuccess,  setShowSuccess]  = useState(false);
