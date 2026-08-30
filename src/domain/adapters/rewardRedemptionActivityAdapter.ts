@@ -1,10 +1,18 @@
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import type { Reward, RewardRedemption, RewardRedemptionStatus } from '@/types';
 
+// 'cancelled' (child withdrew) maps to its own distinct ActivityStatus,
+// never to 'declined' — REJECTED and CANCELLED are not the same Product
+// event (see familyActivity.ts's own comment on 'cancelled'). In
+// practice this adapter only ever receives pending rows today
+// (TodayScreen's RedemptionReviewSection passes pendingRedemptions only),
+// so every non-'pending' entry here exists for type exhaustiveness /
+// future-proofing, not because it is currently expected to render.
 const STATUS_MAP: Record<RewardRedemptionStatus, FamilyActivity['status']> = {
-  pending:  'pending',
-  approved: 'completed',
-  rejected: 'declined',
+  pending:   'pending',
+  approved:  'completed',
+  rejected:  'declined',
+  cancelled: 'cancelled',
 };
 
 // Pure, no copy/i18n dependency — mirrors ContributionClaimAdapter/

@@ -12,7 +12,13 @@ export type ActivityStatus =
   | 'in_progress'
   | 'needs_attention'
   | 'completed'
-  | 'declined';
+  | 'declined'
+  // Reward Reserved Points — a requester's own withdrawal, distinct from
+  // 'declined' (a reviewer's decision). See
+  // rewardRedemptionActivityAdapter.ts's own comment: REJECTED (adult
+  // declined) maps to 'declined'; CANCELLED (child withdrew) maps here,
+  // never to 'declined' — the two are not the same Product event.
+  | 'cancelled';
 
 // Only actions with a real, shipped mutation behind them. 'skip' (mentioned
 // for chores in early design discussion) has no corresponding status/feature

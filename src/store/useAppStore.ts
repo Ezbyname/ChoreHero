@@ -248,6 +248,7 @@ function mapRewardRedemptionRow(r: RewardRedemptionRow): RewardRedemption {
     clientRequestId:        r.client_request_id,
     pointsRequiredSnapshot: r.points_required_snapshot,
     status:                 r.status,
+    reservationModel:       r.reservation_model,
     reviewedByProfileId:    r.reviewed_by_profile_id ?? undefined,
     reviewedAt:             r.reviewed_at ?? undefined,
     requestedAt:            r.requested_at,

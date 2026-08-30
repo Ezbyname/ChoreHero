@@ -83,6 +83,7 @@ test('commitHydrationSnapshot maps reward_redemptions rows into the store with c
           client_request_id:        'key-1',
           points_required_snapshot: 50,
           status:                   'pending',
+          reservation_model:        'reserved',
           reviewed_by_profile_id:   null,
           reviewed_at:              null,
           requested_at:             NOW,
@@ -103,6 +104,7 @@ test('commitHydrationSnapshot maps reward_redemptions rows into the store with c
     clientRequestId:        'key-1',
     pointsRequiredSnapshot: 50,
     status:                 'pending',
+    reservationModel:       'reserved',
     reviewedByProfileId:    undefined,
     reviewedAt:             undefined,
     requestedAt:            NOW,
@@ -115,7 +117,7 @@ test('an empty reward_redemptions hydration result produces an empty store slice
   useAppStore.getState().setRewardRedemptions([
     {
       id: 'stale', householdId: HOUSEHOLD_ID, rewardId: 'r', requestedByProfileId: USER_ID,
-      clientRequestId: 'k', pointsRequiredSnapshot: 1, status: 'pending',
+      clientRequestId: 'k', pointsRequiredSnapshot: 1, status: 'pending', reservationModel: 'reserved',
       requestedAt: NOW, createdAt: NOW, updatedAt: NOW,
     },
   ]);
@@ -129,7 +131,7 @@ test('clearAppData removes reward redemption state on sign-out', () => {
   useAppStore.getState().setRewardRedemptions([
     {
       id: 'r1', householdId: HOUSEHOLD_ID, rewardId: 'r', requestedByProfileId: USER_ID,
-      clientRequestId: 'k', pointsRequiredSnapshot: 1, status: 'pending',
+      clientRequestId: 'k', pointsRequiredSnapshot: 1, status: 'pending', reservationModel: 'reserved',
       requestedAt: NOW, createdAt: NOW, updatedAt: NOW,
     },
   ]);
@@ -156,6 +158,7 @@ test('a reward_redemptions row from a different household fails the existing hyd
           client_request_id:        'key-1',
           points_required_snapshot: 50,
           status:                   'pending',
+          reservation_model:        'reserved',
           reviewed_by_profile_id:   null,
           reviewed_at:              null,
           requested_at:             NOW,

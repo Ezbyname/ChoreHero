@@ -73,7 +73,8 @@ export type ContributionClaimStatus =
 export type RewardRedemptionStatus =
   | 'pending'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'cancelled';
 
 // ============================================================
 // DATABASE TYPE
@@ -493,6 +494,12 @@ export interface Database {
           status:                    RewardRedemptionStatus;
           reviewed_by_profile_id:    string | null;
           reviewed_at:               string | null;
+          // Reward Reserved Points — legacy compatibility discriminator.
+          // 'legacy' = predates reservation accounting (never reserved,
+          // never should be). 'reserved' = created by the reservation-
+          // aware request_reward_redemption RPC. See
+          // supabase/migrations/20260830010000_reward_redemption_reserved_points.sql.
+          reservation_model:         'legacy' | 'reserved';
           requested_at:              string;
           created_at:                string;
           updated_at:                string;
@@ -590,6 +597,12 @@ export interface Database {
         Returns: Database['public']['Tables']['reward_redemptions']['Row'];
       };
       reject_reward_redemption: {
+        Args: {
+          p_redemption_id: string;
+        };
+        Returns: Database['public']['Tables']['reward_redemptions']['Row'];
+      };
+      cancel_reward_redemption: {
         Args: {
           p_redemption_id: string;
         };

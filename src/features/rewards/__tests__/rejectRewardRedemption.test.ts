@@ -19,6 +19,7 @@ function seedRedemption(overrides: Partial<RewardRedemption> = {}): void {
       clientRequestId:        'key-1',
       pointsRequiredSnapshot: 50,
       status:                 'pending',
+      reservationModel:       'reserved',
       requestedAt:            new Date().toISOString(),
       createdAt:              new Date().toISOString(),
       updatedAt:              new Date().toISOString(),
@@ -104,4 +105,25 @@ test('rejecting an already-approved redemption returns not_pending', async () =>
   });
 
   assert.deepEqual(result, { ok: false, reason: 'not_pending' });
+});
+
+// Legacy Pending compatibility (Final Pre-Commit Closure Gate): rejection
+// never mutates balance for ANY redemption, regardless of reservation
+// model — a legacy row was never reserved, so there is no "phantom
+// release" risk here; this proves rejecting one behaves identically to
+// rejecting a new-model row.
+test('rejecting a legacy-model pending redemption does no balance mutation, same as a new-model one', async () => {
+  useAppStore.getState().setPointsBalances([{ userId: CHILD_ID, householdId: HOUSEHOLD_ID, balance: 100 }]);
+  seedRedemption({ reservationModel: 'legacy' });
+
+  const result = await rejectRewardRedemption({
+    redemptionId:        'redemption-1',
+    householdId:         HOUSEHOLD_ID,
+    role:                'adult',
+    reviewedByProfileId: ADULT_ID,
+  });
+
+  assert.deepEqual(result, { ok: true });
+  const balance = useAppStore.getState().pointsBalances.find((pb) => pb.userId === CHILD_ID);
+  assert.equal(balance?.balance, 100);
 });

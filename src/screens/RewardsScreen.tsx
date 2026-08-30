@@ -7,9 +7,11 @@ import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { RewardCard } from '@/features/rewards/components/RewardCard';
 import { createReward } from '@/features/rewards/createReward';
+import { computeMyPointsSummary, selectReservedPendingSnapshots } from '@/features/rewards/pointsSummary';
 import { sortRewardsForDisplay } from '@/features/rewards/sortRewards';
 import { useAppStore } from '@/store/useAppStore';
 import {
+  selectCanCancelRedemption,
   selectCanCreateRewards,
   selectCanRequestRedemption,
   selectCurrentHousehold,
@@ -147,6 +149,7 @@ export function RewardsScreen() {
   const role                  = useAppStore(selectCurrentMemberRole);
   const canCreateRewards       = useAppStore(selectCanCreateRewards);
   const canRequestRedemption   = useAppStore(selectCanRequestRedemption);
+  const canCancelRedemption    = useAppStore(selectCanCancelRedemption);
   // selectRewardRedemptions returns the raw, stable store array — the same
   // "filter locally, not inside the selector" rule TodayScreen's
   // pendingClaims already follows (see its own comment for why a
@@ -165,10 +168,10 @@ export function RewardsScreen() {
   // with no balance row yet (e.g. a child who hasn't earned points) reads
   // as 0, the same "absent balance -> 0" convention the request RPC and
   // its own mock-mode branch already use, not a fabricated value.
-  const viewerBalance = myBalance?.balance ?? 0;
+  const grossBalance = myBalance?.balance ?? 0;
 
   // This viewer's own PENDING redemption per reward, if any (Decision 8:
-  // at most one). A resolved (approved/rejected) historical row is
+  // at most one). A resolved (approved/rejected/cancelled) historical row is
   // deliberately excluded — it must never block a new request (Decision 3).
   const myPendingByRewardId = useMemo(() => {
     const map = new Map<string, (typeof rewardRedemptions)[number]>();
@@ -179,6 +182,24 @@ export function RewardsScreen() {
     }
     return map;
   }, [rewardRedemptions, user?.id]);
+
+  // Reward Reserved Points — this viewer's own RESERVED pending snapshots
+  // only. Deliberately re-filters rewardRedemptions directly (not derived
+  // from myPendingByRewardId above) because the two lists serve different
+  // purposes: myPendingByRewardId must include a legacy pending row too
+  // (it still blocks a duplicate request and still renders as a pending
+  // reward card — Decision 8 is unaffected by the reservation model), but
+  // a legacy row must never enter the Available/Pending reservation math
+  // — see selectReservedPendingSnapshots's own comment.
+  const myPendingSnapshots = useMemo(
+    () => selectReservedPendingSnapshots(rewardRedemptions, user?.id ?? ''),
+    [rewardRedemptions, user?.id],
+  );
+
+  const { available: viewerBalance, pending: viewerPending } = computeMyPointsSummary(
+    grossBalance,
+    myPendingSnapshots,
+  );
 
   return (
     <Screen style={styles.screen}>
@@ -213,6 +234,17 @@ export function RewardsScreen() {
           ))}
         </View>
 
+        {role === 'child' && (
+          <View style={styles.pointsSection}>
+            <View style={styles.pointsRow}>
+              <Text style={styles.pointsName}>{copy.rewards.myPointsAvailable.replace('{n}', String(viewerBalance))}</Text>
+            </View>
+            <View style={styles.pointsRow}>
+              <Text style={styles.pointsName}>{copy.rewards.myPointsPending.replace('{n}', String(viewerPending))}</Text>
+            </View>
+          </View>
+        )}
+
         <Text style={styles.sectionLabel}>{copy.rewards.availableRewards}</Text>
 
         {activeRewards.length === 0 ? (
@@ -225,6 +257,7 @@ export function RewardsScreen() {
               viewerBalance={viewerBalance}
               memberName={user ? getMemberNameByUserId(members, user.id) : ''}
               canRequest={canRequestRedemption}
+              canCancel={canCancelRedemption}
               pendingRedemption={myPendingByRewardId.get(reward.id)}
               householdId={household?.id ?? ''}
               requestedByProfileId={user?.id ?? ''}

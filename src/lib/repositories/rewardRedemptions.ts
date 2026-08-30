@@ -112,3 +112,25 @@ export async function rejectRewardRedemption(
   if (error || !data) return { data: null, error: error ?? notConfiguredError() };
   return { data, error: null };
 }
+
+// Reward Reserved Points — calls the cancel_reward_redemption RPC
+// (SECURITY DEFINER — see
+// supabase/migrations/20260830010000_reward_redemption_reserved_points.sql).
+// Child self-service only — the RPC requires the caller to BE the
+// redemption's own requester (not an owner/admin/adult review action);
+// this function never sends a target profile id, the RPC derives the
+// caller from auth.uid() itself. On failure, error.code is one of:
+// 'CH012' (redemption not found), 'CH013' (redemption not pending) —
+// every other code is a generic failure, mapped by the caller (see
+// src/features/rewards/cancelRewardRedemption.ts).
+export async function cancelRewardRedemption(
+  redemptionId: string,
+): Promise<RepositoryResult<RewardRedemptionRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.rpc('cancel_reward_redemption', {
+    p_redemption_id: redemptionId,
+  });
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}

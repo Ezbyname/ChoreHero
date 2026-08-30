@@ -49,6 +49,7 @@ export type HouseholdPermission =
   | 'rewards.request_redemption'  // request a reward redemption (child only — Decision 4)
   | 'rewards.approve_redemption'  // approve a pending reward redemption
   | 'rewards.reject_redemption'   // reject a pending reward redemption
+  | 'rewards.cancel_redemption'   // withdraw one's own pending reward request ("Changed my mind" — child only)
   | 'requests.approve'            // approve point or reward requests
 
   // Contributions (vocabulary for T1.7.x — no runtime flow in T1.6.1)
@@ -67,6 +68,7 @@ const CHILD_PERMISSIONS: readonly HouseholdPermission[] = [
   'tasks.claim_open',
   'rewards.redeem',
   'rewards.request_redemption',      // Decision 4: requester = beneficiary = child, always
+  'rewards.cancel_redemption',       // a child may withdraw their own pending request
   'contributions.claim_completed',   // children can submit claims, but cannot self-approve
 ];
 

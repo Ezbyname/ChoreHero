@@ -62,6 +62,11 @@ export const copy = {
     morePointsToGo:   '{n} more to go',
     memberHasPoints:  '{name} has {n} points',
     noRewards:        'No rewards yet. You can add some when you are ready.',
+    // Reward Reserved Points — the viewing child's own Available/Pending
+    // summary. "Available" is spendable now; "Pending" is reserved by
+    // their own currently-PENDING requests, not yet permanently spent.
+    myPointsAvailable: '{n} points available',
+    myPointsPending:   '{n} points pending',
   },
   taskCard: {
     unassigned:     'Waiting for someone to take this',
@@ -127,6 +132,9 @@ export const copy = {
     requestButton:       'Request this reward',
     pendingBadge:        'Waiting for approval',
     requestError:        'We couldn\'t send that. Please try again.',
+    // Reward Reserved Points — now means insufficient AVAILABLE balance
+    // (gross minus this child's other pending reservations), not raw
+    // gross balance. Copy stays generic/correct under either reading.
     insufficientBalance: 'You don\'t have enough points for this yet.',
     rewardArchived:      'This reward is no longer available.',
     duplicatePending:    'You already have a request waiting for approval for this reward.',
@@ -134,6 +142,10 @@ export const copy = {
     // conflict (the same client_request_id was reused for a different
     // reward) rather than an everyday retryable error.
     idempotencyConflict: 'Something went wrong with that request. Please try again.',
+    // Reward Reserved Points — pending-card state (see RewardCard.tsx).
+    pendingPointsLabel:  '{n} points pending',
+    changedMyMindButton: 'Changed my mind',
+    cancelError:         'We couldn\'t cancel that. Please try again.',
   },
   // A3 — Confirm Before Redeem. The one-time confirmation shown before a
   // request is actually sent — see ConfirmRewardRequestModal.tsx.
@@ -142,11 +154,28 @@ export const copy = {
   // this file's existing inline `.replace('{n}', ...)` convention used
   // elsewhere (e.g. rewards.pointsNeeded), just centralized in one pure,
   // directly-testable function since two placeholders are involved here.
+  //
+  // Reward Reserved Points — bodyTemplate rewritten to be reservation-
+  // aware: the old "points won't be deducted until it's approved" wording
+  // is no longer accurate now that a request reserves points immediately.
+  // {n} appears twice deliberately — formatConfirmRewardRequestBody uses
+  // replaceAll for this placeholder specifically to support that.
   rewardRedemptionConfirm: {
     title:       'Request this reward?',
-    bodyTemplate: '{title} costs {n} points. An adult needs to approve your request. Your points won\'t be deducted until it\'s approved.',
+    bodyTemplate: '{title} costs {n} points. {n} points will move to Pending while an adult reviews your request. If the request is declined or you change your mind, those points will return to your available balance.',
     confirmCta:  'Send request',
     cancelCta:   'Cancel',
+  },
+  // Reward Reserved Points — "Changed my mind" confirmation. Distinct
+  // from rewardRedemptionConfirm above (that one is shown before sending
+  // a request; this one is shown before withdrawing an already-pending
+  // one). bodyTemplate's {n} is filled in by
+  // cancelRewardRequestCopy.ts's formatCancelRewardRequestBody.
+  rewardCancelConfirm: {
+    title:       'Cancel this reward request?',
+    bodyTemplate: 'Changed your mind? This reward request will be cancelled and your {n} pending points will be returned to your available balance.',
+    keepCta:     'Keep request',
+    cancelCta:   'Cancel request',
   },
   rewardReview: {
     // Adult/Admin/Owner redemption review UX (parent flow) — distinct

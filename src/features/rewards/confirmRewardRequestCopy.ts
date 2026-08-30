@@ -6,8 +6,11 @@ import { copy } from '@/content/copy';
 // (see resolveInitialEmail.ts: Node's --experimental-strip-types loader
 // rejects .tsx files outright, regardless of whether the specific export
 // itself uses JSX).
+// Reward Reserved Points — bodyTemplate's {n} appears twice by design
+// (see copy.ts's own comment); replaceAll is required here, plain
+// replace would leave the second occurrence untouched.
 export function formatConfirmRewardRequestBody(rewardTitle: string, requiredPoints: number): string {
   return copy.rewardRedemptionConfirm.bodyTemplate
     .replace('{title}', rewardTitle)
-    .replace('{n}', String(requiredPoints));
+    .replaceAll('{n}', String(requiredPoints));
 }

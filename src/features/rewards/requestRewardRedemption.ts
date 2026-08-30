@@ -5,7 +5,12 @@ import { useAppStore } from '@/store/useAppStore';
 import type { RewardRedemption } from '@/types';
 
 // Dedicated ERRCODEs the RPC raises — see
-// supabase/migrations/20260822010000_reward_redemption_rpcs.sql. Every
+// supabase/migrations/20260822010000_reward_redemption_rpcs.sql and
+// supabase/migrations/20260830010000_reward_redemption_reserved_points.sql
+// (Reward Reserved Points: request_reward_redemption's balance check is
+// now reservation-aware — INSUFFICIENT_BALANCE_CODE now means
+// insufficient AVAILABLE balance, gross balance minus the sum of the
+// child's own other pending reservations, not raw gross balance). Every
 // other RPC failure (including the RPC's own defense-in-depth 28000 for
 // wrong role) collapses to 'failed' — the client-side gate below is what
 // actually surfaces 'not_authorized' in real-mode operation, mirroring
@@ -74,10 +79,27 @@ export async function requestRewardRedemption(
     if (!reward) return { ok: false, reason: 'reward_not_found' };
     if (!reward.isActive) return { ok: false, reason: 'reward_archived' };
 
-    const balance = pointsBalances.find(
+    const grossBalance = pointsBalances.find(
       (pb) => pb.householdId === input.householdId && pb.userId === input.requestedByProfileId,
     )?.balance ?? 0;
-    if (balance < reward.requiredPoints) return { ok: false, reason: 'insufficient_balance' };
+
+    // Reward Reserved Points — mirrors the RPC's own reservation-aware
+    // check: available = gross balance minus the sum of this child's own
+    // other currently-PENDING RESERVED-model reservations, not raw gross
+    // balance. A legacy (pre-reservation-model) pending row is excluded —
+    // mirrors the RPC's own reservation_model = 'reserved' filter (see
+    // 20260830010000_reward_redemption_reserved_points.sql).
+    const reserved = rewardRedemptions
+      .filter((r) =>
+        r.householdId === input.householdId &&
+        r.requestedByProfileId === input.requestedByProfileId &&
+        r.status === 'pending' &&
+        r.reservationModel === 'reserved',
+      )
+      .reduce((sum, r) => sum + r.pointsRequiredSnapshot, 0);
+    const availableBalance = grossBalance - reserved;
+
+    if (availableBalance < reward.requiredPoints) return { ok: false, reason: 'insufficient_balance' };
 
     const duplicatePending = rewardRedemptions.some(
       (r) =>
@@ -97,6 +119,10 @@ export async function requestRewardRedemption(
       clientRequestId:        input.clientRequestId,
       pointsRequiredSnapshot: reward.requiredPoints,
       status:                 'pending',
+      // Every row this function creates is, by definition, created under
+      // the current reservation-aware contract — never 'legacy' (that
+      // value only ever describes a row that predates this feature).
+      reservationModel:       'reserved',
       requestedAt:            now,
       createdAt:              now,
       updatedAt:              now,

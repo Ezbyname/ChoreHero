@@ -12,6 +12,7 @@ function makeRedemption(overrides: Partial<RewardRedemption> = {}): RewardRedemp
     clientRequestId:        'key-1',
     pointsRequiredSnapshot: 50,
     status:                 'pending',
+    reservationModel:       'reserved',
     requestedAt:            '2026-08-22T09:00:00.000Z',
     createdAt:              '2026-08-22T09:00:00.000Z',
     updatedAt:              '2026-08-22T09:00:00.000Z',
@@ -46,6 +47,18 @@ test('approved and rejected redemptions expose no further actions, even for an a
   const rejected = RewardRedemptionAdapter.toFamilyActivity(makeRedemption({ status: 'rejected' }), makeReward());
   assert.equal(rejected.status, 'declined');
   assert.deepEqual(rejected.availableActions, []);
+});
+
+// Reward Reserved Points — a cancelled (child-withdrawn) redemption is
+// terminal like approved/rejected: no further actions, regardless of
+// reward state. Its status maps distinctly from 'rejected' — CANCELLED
+// (child withdrew) is not the same Product event as REJECTED (adult
+// declined), so it must not collapse into the same 'declined' bucket.
+test('a cancelled redemption exposes no further actions, and does not collapse into declined', () => {
+  const cancelled = RewardRedemptionAdapter.toFamilyActivity(makeRedemption({ status: 'cancelled' }), makeReward());
+  assert.equal(cancelled.status, 'cancelled');
+  assert.notEqual(cancelled.status, 'declined');
+  assert.deepEqual(cancelled.availableActions, []);
 });
 
 // ── Decision 7: archived reward, existing PENDING redemption ─────────────────

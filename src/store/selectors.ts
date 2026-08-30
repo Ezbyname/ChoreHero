@@ -162,6 +162,12 @@ export const selectCanApproveRedemption = (s: AppStore): boolean =>
 export const selectCanRejectRedemption = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.reject_redemption');
 
+// Reward Reserved Points — "Changed my mind". Child-only, mirroring
+// selectCanRequestRedemption's own exact-role narrowing rationale above.
+export const selectCanCancelRedemption = (s: AppStore): boolean =>
+  hasHouseholdPermission(selectCurrentMemberRole(s), 'rewards.cancel_redemption') &&
+  selectCurrentMemberRole(s) === 'child';
+
 // Contributions (vocabulary for T1.7.x — no contribution runtime flow in T1.6.1)
 export const selectCanCreateContribution = (s: AppStore): boolean =>
   hasHouseholdPermission(selectCurrentMemberRole(s), 'contributions.create_completed');

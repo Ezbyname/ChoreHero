@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { copy } from '@/content/copy';
+import { CancelRewardRequestModal } from '@/features/rewards/components/CancelRewardRequestModal';
 import { ConfirmRewardRequestModal } from '@/features/rewards/components/ConfirmRewardRequestModal';
+import { cancelRewardRedemption, type CancelRewardRedemptionResult } from '@/features/rewards/cancelRewardRedemption';
 import { requestRewardRedemption, type RequestRewardRedemptionResult } from '@/features/rewards/requestRewardRedemption';
 import { isRedemptionRequestAvailable, resolveClientRequestId, nextClientRequestId } from '@/features/rewards/rewardRequestUx';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
@@ -9,11 +11,14 @@ import type { Reward, RewardRedemption } from '@/types';
 
 interface RewardCardProps {
   reward:               Reward;
-  // The current viewer's own balance — resolved by the caller via
-  // selectMyPointsBalance, never pointsBalances[0]. 0 when the viewer has
-  // no balance row yet (repo convention: absent balance reads as 0 client-
-  // and server-side — see request_reward_redemption's own v_balance
-  // NOT FOUND -> 0 handling); never fabricated beyond that convention.
+  // The current viewer's own AVAILABLE balance (Reward Reserved Points:
+  // gross balance minus the sum of the viewer's own other currently-
+  // PENDING reservations) — resolved by the caller via
+  // computeMyPointsSummary, never the raw points_balances row. 0 when the
+  // viewer has no balance row yet (repo convention: absent balance reads
+  // as 0 client- and server-side — see request_reward_redemption's own
+  // v_balance NOT FOUND -> 0 handling); never fabricated beyond that
+  // convention.
   viewerBalance:        number;
   memberName:           string;
   // Exact child-role gate from selectCanRequestRedemption — an adult/
@@ -22,10 +27,15 @@ interface RewardCardProps {
   // component renders no request affordance at all (hidden, not merely
   // disabled) — satisfies "Adult Request UI Must Not Appear".
   canRequest:           boolean;
+  // Reward Reserved Points — exact child-role gate from
+  // selectCanCancelRedemption, mirroring canRequest's own rationale.
+  // Governs whether "Changed my mind" can even be tapped; the backend RPC
+  // independently re-derives and enforces ownership regardless.
+  canCancel:            boolean;
   // This viewer's own PENDING redemption for this specific reward, if
-  // any (Decision 8: at most one). A resolved (approved/rejected)
-  // historical row is deliberately not passed here — it must never be
-  // treated as an active pending block (Decision 3).
+  // any (Decision 8: at most one). A resolved (approved/rejected/
+  // cancelled) historical row is deliberately not passed here — it must
+  // never be treated as an active pending block (Decision 3).
   pendingRedemption:    RewardRedemption | undefined;
   householdId:          string;
   requestedByProfileId: string;
@@ -60,6 +70,7 @@ export function RewardCard({
   viewerBalance,
   memberName,
   canRequest,
+  canCancel,
   pendingRedemption,
   householdId,
   requestedByProfileId,
@@ -78,6 +89,12 @@ export function RewardCard({
   // for why a real Modal is used here instead of Alert.alert).
   const [isConfirmVisible, setIsConfirmVisible] = useState(false);
   const pendingRequestIdRef                 = useRef<string | null>(null);
+
+  // Reward Reserved Points — "Changed my mind" state, mirroring the
+  // request-confirmation state above exactly.
+  const [isCancelVisible, setIsCancelVisible] = useState(false);
+  const [isCancelling, setIsCancelling]       = useState(false);
+  const [cancelFeedback, setCancelFeedback]   = useState<string | null>(null);
 
   function feedbackFor(result: Extract<RequestRewardRedemptionResult, { ok: false }>): string {
     switch (result.reason) {
@@ -140,8 +157,43 @@ export function RewardCard({
     void handleRequest();
   }
 
-  function handleCancelRequest() {
+  function handleCancelRequestModal() {
     setIsConfirmVisible(false);
+  }
+
+  function cancelFeedbackFor(result: Extract<CancelRewardRedemptionResult, { ok: false }>): string {
+    // Every reason collapses to the same generic message — mirrors
+    // rewardReview.rejectError's own single-message convention for the
+    // adult reject action; the distinctions (not_found/not_pending/
+    // not_own_redemption/not_authorized/failed) are for logging/tests,
+    // not user-facing differentiation.
+    void result;
+    return copy.rewardRedemption.cancelError;
+  }
+
+  // Reward Reserved Points — "Changed my mind". Mirrors
+  // handleConfirmRequest's gate-in-front-of-the-real-action shape exactly.
+  async function handleCancelConfirmed() {
+    if (!pendingRedemption || isCancelling) return;
+    setIsCancelVisible(false);
+    setIsCancelling(true);
+    setCancelFeedback(null);
+
+    const result = await cancelRewardRedemption({
+      redemptionId:         pendingRedemption.id,
+      householdId,
+      role,
+      requestedByProfileId,
+    });
+
+    if (!result.ok) {
+      setCancelFeedback(cancelFeedbackFor(result));
+    }
+    setIsCancelling(false);
+  }
+
+  function handleKeepRequest() {
+    setIsCancelVisible(false);
   }
 
   return (
@@ -174,8 +226,33 @@ export function RewardCard({
 
       {canRequest && (
         isPending ? (
-          <View style={styles.pendingBadge}>
-            <Text style={styles.pendingBadgeText}>{copy.rewardRedemption.pendingBadge}</Text>
+          <View style={styles.pendingCard}>
+            <View style={styles.pendingBadge}>
+              <Text style={styles.pendingBadgeText}>{copy.rewardRedemption.pendingBadge}</Text>
+            </View>
+            <Text style={styles.pendingPointsText}>
+              {copy.rewardRedemption.pendingPointsLabel.replace('{n}', String(pendingRedemption.pointsRequiredSnapshot))}
+            </Text>
+
+            {canCancel && (
+              <TouchableOpacity
+                style={[styles.changedMyMindButton, isCancelling && styles.buttonDisabled]}
+                onPress={() => setIsCancelVisible(true)}
+                disabled={isCancelling}
+                activeOpacity={0.8}
+              >
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Text style={styles.changedMyMindButtonText}>{copy.rewardRedemption.changedMyMindButton}</Text>
+                )}
+              </TouchableOpacity>
+            )}
+            {cancelFeedback && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{cancelFeedback}</Text>
+              </View>
+            )}
           </View>
         ) : (
           <>
@@ -194,7 +271,11 @@ export function RewardCard({
                 <Text style={styles.requestButtonText}>{copy.rewardRedemption.requestButton}</Text>
               )}
             </TouchableOpacity>
-            {feedback && <Text style={styles.feedbackText}>{feedback}</Text>}
+            {feedback && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{feedback}</Text>
+              </View>
+            )}
           </>
         )
       )}
@@ -204,7 +285,14 @@ export function RewardCard({
         rewardTitle={reward.title}
         requiredPoints={requiredPoints}
         onConfirm={handleConfirmRequest}
-        onCancel={handleCancelRequest}
+        onCancel={handleCancelRequestModal}
+      />
+
+      <CancelRewardRequestModal
+        visible={isCancelVisible}
+        pendingPoints={pendingRedemption?.pointsRequiredSnapshot ?? 0}
+        onKeepRequest={handleKeepRequest}
+        onCancelRequest={handleCancelConfirmed}
       />
     </View>
   );
@@ -283,8 +371,10 @@ const styles = StyleSheet.create({
     color:      colors.surface,
     fontWeight: '600',
   },
+  pendingCard: {
+    marginTop: spacing.md,
+  },
   pendingBadge: {
-    marginTop:         spacing.md,
     alignSelf:         'flex-start',
     backgroundColor:   colors.primarySoft,
     borderRadius:      radius.pill,
@@ -296,9 +386,36 @@ const styles = StyleSheet.create({
     color:      colors.primary,
     fontWeight: '600',
   },
-  feedbackText: {
+  pendingPointsText: {
     ...typography.caption,
-    color:     colors.textMuted,
-    marginTop: spacing.sm,
+    color:      colors.textSecondary,
+    fontWeight: '600',
+    marginTop:  spacing.xs,
+  },
+  changedMyMindButton: {
+    borderWidth:     1,
+    borderColor:     colors.borderSoft,
+    borderRadius:    radius.md,
+    paddingVertical: spacing.sm,
+    alignItems:      'center',
+    marginTop:       spacing.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  changedMyMindButtonText: {
+    ...typography.body,
+    color:      colors.textSecondary,
+    fontWeight: '600',
+  },
+  errorBox: {
+    backgroundColor: colors.errorSoft,
+    borderRadius:    8,
+    padding:         spacing.md,
+    marginTop:       spacing.sm,
+  },
+  errorText: {
+    ...typography.caption,
+    color: '#B91C1C',
   },
 });

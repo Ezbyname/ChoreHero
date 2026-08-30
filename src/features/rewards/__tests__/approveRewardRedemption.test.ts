@@ -38,6 +38,7 @@ function seedRedemption(overrides: Partial<RewardRedemption> = {}): void {
       clientRequestId:        'key-1',
       pointsRequiredSnapshot: 50,
       status:                 'pending',
+      reservationModel:       'reserved',
       requestedAt:            new Date().toISOString(),
       createdAt:              new Date().toISOString(),
       updatedAt:              new Date().toISOString(),
@@ -187,4 +188,28 @@ test('uses the request-time points_required_snapshot, not the reward\'s current 
   assert.deepEqual(result, { ok: true });
   const balance = useAppStore.getState().pointsBalances.find((pb) => pb.userId === CHILD_ID);
   assert.equal(balance?.balance, 50); // 100 - 50 snapshot, not 100 - 999
+});
+
+// Legacy Pending compatibility (Final Pre-Commit Closure Gate): approval
+// never reads reservationModel — it always deducts points_required_snapshot
+// directly from gross balance exactly once, regardless of which model
+// produced the row. A legacy row's approval must behave identically to a
+// new-model row's approval.
+test('a legacy-model pending redemption approves with the same single, exact deduction as a new-model one', async () => {
+  seedReward();
+  seedBalance(100);
+  seedRedemption({ pointsRequiredSnapshot: 50, reservationModel: 'legacy' });
+
+  const result = await approveRewardRedemption({
+    redemptionId:        'redemption-1',
+    householdId:         HOUSEHOLD_ID,
+    role:                'adult',
+    reviewedByProfileId: ADULT_ID,
+  });
+
+  assert.deepEqual(result, { ok: true });
+  const redemption = useAppStore.getState().rewardRedemptions.find((r) => r.id === 'redemption-1');
+  assert.equal(redemption?.status, 'approved');
+  const balance = useAppStore.getState().pointsBalances.find((pb) => pb.userId === CHILD_ID);
+  assert.equal(balance?.balance, 50); // 100 - 50, exactly once — no double-deduction risk
 });
