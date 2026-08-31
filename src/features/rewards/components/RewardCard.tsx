@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import React, { useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { copy } from '@/content/copy';
@@ -61,8 +62,21 @@ interface RewardCardProps {
 // reuse instead; building one is out of scope for this feature (see the
 // approved slice's "do not invent a generalized idempotency framework"
 // instruction).
+//
+// Build-4 Send Request investigation: this previously called the global
+// `crypto.randomUUID()`. That global is not guaranteed to exist in this
+// Hermes/React Native runtime (no polyfill was ever installed for it,
+// unlike the URL polyfill this codebase already carries for an analogous
+// RN-built-in gap — see supabaseNativeSetup.native.ts), and a throw here
+// happened BEFORE any submitting/error state was ever set, so a failure
+// was completely invisible to the user and to Supabase's own logs — it
+// never reached the RPC call at all. expo-crypto's randomUUID() is a
+// native-module implementation, not dependent on the Hermes `crypto`
+// global, with a Web-platform fallback to the browser's own
+// crypto.randomUUID() (universally available there) — see expo-crypto's
+// own ExpoCrypto.web.js. Same UUID v4 (RFC4122) semantics as before.
 function generateClientRequestId(): string {
-  return crypto.randomUUID();
+  return Crypto.randomUUID();
 }
 
 export function RewardCard({
@@ -123,38 +137,79 @@ export function RewardCard({
     isSubmitting,
   });
 
-  async function handleRequest() {
-    if (!requestAvailable) return;
+  // Build-4 Send Request investigation: this whole body is now inside a
+  // try/catch/finally, starting BEFORE client_request_id resolution — the
+  // original ordering (requestAvailable check, then id resolution, then
+  // isSubmitting) had two ways to exit before the RPC with zero visible
+  // state change: a silent `if (!requestAvailable) return`, and an
+  // unguarded `crypto.randomUUID()` call whose failure was never caught
+  // anywhere in this chain (handleConfirmRequest invoked this via a bare
+  // `void handleRequest()`, no .catch()). Both are closed here. Return
+  // type is now explicit boolean (not "the promise settled") — the
+  // caller can tell success from failure, per this repo's existing
+  // typed-result convention elsewhere (RequestRewardRedemptionResult).
+  //
+  // pendingRequestIdRef in the catch branch: deliberately left untouched,
+  // never cleared here. If the throw happened before clientRequestId was
+  // resolved (e.g. inside generateClientRequestId), the ref was never
+  // reassigned during this call — nothing to undo. If it happened after
+  // (e.g. an unexpected throw from deeper in the request path), we
+  // cannot prove the server didn't receive/process the request — the
+  // same rule nextClientRequestId already applies to a returned 'failed'
+  // outcome (keep the key so a retry reuses it, per Decision 10) applies
+  // here by the same reasoning; clearing it would risk a second,
+  // duplicate redemption on retry if the first request actually landed.
+  async function handleRequest(): Promise<boolean> {
+    try {
+      if (!requestAvailable) {
+        setFeedback(copy.rewardRedemption.requestError);
+        return false;
+      }
 
-    const clientRequestId = resolveClientRequestId(pendingRequestIdRef.current, generateClientRequestId);
-    pendingRequestIdRef.current = clientRequestId;
+      const clientRequestId = resolveClientRequestId(pendingRequestIdRef.current, generateClientRequestId);
+      pendingRequestIdRef.current = clientRequestId;
 
-    setIsSubmitting(true);
-    setFeedback(null);
+      setIsSubmitting(true);
+      setFeedback(null);
 
-    const result = await requestRewardRedemption({
-      rewardId:             reward.id,
-      householdId,
-      requestedByProfileId,
-      role,
-      clientRequestId,
-    });
+      const result = await requestRewardRedemption({
+        rewardId:             reward.id,
+        householdId,
+        requestedByProfileId,
+        role,
+        clientRequestId,
+      });
 
-    pendingRequestIdRef.current = nextClientRequestId(clientRequestId, result);
-    if (!result.ok) {
-      setFeedback(feedbackFor(result));
+      pendingRequestIdRef.current = nextClientRequestId(clientRequestId, result);
+
+      if (!result.ok) {
+        setFeedback(feedbackFor(result));
+        return false;
+      }
+
+      return true;
+    } catch {
+      setFeedback(copy.rewardRedemption.requestError);
+      return false;
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   }
 
-  // A3 — Confirm Before Redeem. The confirmation is only a gate in front
-  // of the existing handleRequest — client_request_id resolution,
-  // isSubmitting, the RPC call, and error/success handling all remain
-  // exactly as they were, unmoved and untouched.
-  function handleConfirmRequest() {
+  // A3 — Confirm Before Redeem. Build-4 fix: the modal now closes only
+  // AFTER the outcome is known, not before the attempt starts — closing
+  // first (the original behavior) made a genuine failure indistinguishable
+  // from pressing Cancel, since both ended in "modal gone, nothing else
+  // visibly different". The modal closes either way (the smallest change
+  // consistent with this component's existing structure — see this file's
+  // own errorBox, already rendered right below the request button once
+  // the modal is gone): on success the persistent UI transitions to the
+  // pending card; on failure `feedback` is already set by handleRequest
+  // before this line runs, so the same errorBox appears immediately
+  // instead of the screen looking unchanged.
+  async function handleConfirmRequest() {
+    await handleRequest();
     setIsConfirmVisible(false);
-    void handleRequest();
   }
 
   function handleCancelRequestModal() {
