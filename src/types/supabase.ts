@@ -526,20 +526,12 @@ export interface Database {
           created_at:            string;
         };
         Insert: {
-          id?:                    string;
-          household_id:           string;
-          code:                   string;
-          role?:                  HouseholdMemberRole;
-          created_by_profile_id:  string;
-          redemption_count?:      number;
-          revoked_at?:            string | null;
-          expires_at?:            string;
-          created_at?:            string;
+          household_id:          string;
+          code:                  string;
+          role:                  Extract<HouseholdMemberRole, 'admin' | 'adult' | 'child'>;
+          created_by_profile_id: string;
         };
-        Update: {
-          id?:         string;
-          revoked_at?: string | null;
-        };
+        Update: never;
         Relationships: [];
       };
     };
@@ -552,6 +544,12 @@ export interface Database {
           p_avatar_emoji?: string | null;
         };
         Returns: string; // household_id
+      };
+      revoke_household_invite: {
+        Args: {
+          p_invite_id: string;
+        };
+        Returns: Database['public']['Tables']['household_invites']['Row'];
       };
       claim_open_task: {
         Args: {

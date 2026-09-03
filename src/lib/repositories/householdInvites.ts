@@ -72,11 +72,9 @@ export async function revokeHouseholdInvite(
   if (!supabase) return { data: null, error: notConfiguredError() };
 
   const { data, error } = await supabase
-    .from('household_invites')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', inviteId)
-    .select('*')
-    .single();
+    .rpc('revoke_household_invite', {
+      p_invite_id: inviteId,
+    });
 
   if (error || !data) return { data: null, error: error ?? notConfiguredError() };
   return { data, error: null };
