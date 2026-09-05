@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
@@ -11,7 +11,10 @@ import { approveContributionClaim } from '@/features/contributions/approveContri
 import { claimContribution } from '@/features/contributions/claimContribution';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
 import { approveRewardRedemption } from '@/features/rewards/approveRewardRedemption';
+import { ConfirmRewardReviewModal } from '@/features/rewards/components/ConfirmRewardReviewModal';
 import { rejectRewardRedemption } from '@/features/rewards/rejectRewardRedemption';
+import { createConfirmGuard } from '@/features/rewards/rewardReviewConfirmationUx';
+import type { ReviewAction } from '@/features/rewards/rewardReviewConfirmationUx';
 import { approveTaskCompletion } from '@/features/tasks/approveTaskCompletion';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
@@ -208,8 +211,17 @@ function RedemptionReviewSection({
   role,
   reviewerId,
 }: RedemptionReviewSectionProps) {
-  const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
-  const [feedback, setFeedback]                   = useState<string | null>(null);
+  const [pendingActivityId, setPendingActivityId]         = useState<string | null>(null);
+  const [feedback, setFeedback]                           = useState<string | null>(null);
+  // Adult Reward Review Confirmation — the activity/action awaiting an
+  // explicit confirm, before any mutation is attempted. Separate from
+  // pendingActivityId, which continues to mean "the mutation itself is in
+  // flight" exactly as before.
+  const [pendingConfirmation, setPendingConfirmation]     = useState<{ activity: FamilyActivity; action: ReviewAction } | null>(null);
+  // One guard per section (not per redemption row) — matches the existing
+  // pendingActivityId convention, which already only allows one review
+  // action in flight at a time within this section.
+  const confirmGuardRef = useRef(createConfirmGuard());
 
   const rewardById = useMemo(() => new Map(rewards.map((r) => [r.id, r])), [rewards]);
 
@@ -228,26 +240,49 @@ function RedemptionReviewSection({
     [redemptions, rewardById],
   );
 
-  async function handleAction(activity: FamilyActivity, action: ActivityAction) {
-    if (pendingActivityId) return;
+  // Initial tap only opens the confirmation — no mutation happens here.
+  function handleAction(activity: FamilyActivity, action: ActivityAction) {
+    if (pendingActivityId || pendingConfirmation) return;
     if (action !== 'approve' && action !== 'decline') return;
 
-    setPendingActivityId(activity.id);
     setFeedback(null);
+    setPendingConfirmation({ activity, action: action === 'approve' ? 'approve' : 'reject' });
+  }
 
-    const result = action === 'approve'
-      ? await approveRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId })
-      : await rejectRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId });
+  // CANCELLED — the reviewer backed out. No mutation is ever called, and
+  // the underlying redemption is left completely untouched. This is
+  // distinct from RewardRedemption.status = 'cancelled', which represents
+  // the child withdrawing their own request — this handler never reads or
+  // writes that status.
+  function handleCancelConfirmation() {
+    setPendingConfirmation(null);
+  }
 
-    if (!result.ok) {
+  async function handleConfirm() {
+    if (!pendingConfirmation) return;
+    const { activity, action } = pendingConfirmation;
+
+    setPendingActivityId(activity.id);
+
+    const outcome = await confirmGuardRef.current(action, {
+      approve: () => approveRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId }),
+      reject:  () => rejectRewardRedemption({ redemptionId: activity.id, householdId, role, reviewedByProfileId: reviewerId }),
+    });
+
+    setPendingConfirmation(null);
+
+    // FAILED — confirmed, mutation attempted, mutation failed. Preserves
+    // the exact existing error-reason -> copy mapping; never treated as
+    // CANCELLED.
+    if (outcome.kind === 'FAILED') {
       setFeedback(
-        result.reason === 'not_found'
+        outcome.reason === 'not_found'
           ? copy.rewardReview.notFound
-          : result.reason === 'not_pending'
+          : outcome.reason === 'not_pending'
             ? copy.rewardReview.notPending
-            : result.reason === 'reward_archived'
+            : outcome.reason === 'reward_archived'
               ? copy.rewardReview.approveArchived
-              : result.reason === 'insufficient_balance'
+              : outcome.reason === 'insufficient_balance'
                 ? copy.rewardReview.approveInsufficientBalance
                 : action === 'approve'
                   ? copy.rewardReview.approveError
@@ -268,6 +303,13 @@ function RedemptionReviewSection({
         pendingActivityId={pendingActivityId}
       />
       {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+      <ConfirmRewardReviewModal
+        visible={pendingConfirmation !== null}
+        action={pendingConfirmation?.action ?? 'approve'}
+        isSubmitting={pendingActivityId !== null}
+        onConfirm={handleConfirm}
+        onCancel={handleCancelConfirmation}
+      />
     </View>
   );
 }

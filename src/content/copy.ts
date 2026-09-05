@@ -191,6 +191,20 @@ export const copy = {
     approveError:        'We couldn\'t approve that — please try again.',
     rejectError:         'We couldn\'t send that back — please try again.',
   },
+  // Adult Reward Review Confirmation — shown before an approve/reject tap
+  // in RedemptionReviewSection actually mutates the redemption. Locked
+  // Product copy: deliberately does not restate points/reward pricing
+  // here (that's rewardRedemptionConfirm's job, a different flow) — this
+  // confirms the review decision only. See ConfirmRewardReviewModal.tsx.
+  rewardReviewConfirm: {
+    approveTitle: 'Approve reward request?',
+    approveBody:  'Are you sure you want to approve this reward request?',
+    approveCta:   'Approve',
+    rejectTitle:  'Reject reward request?',
+    rejectBody:   'Are you sure you want to reject this reward request?',
+    rejectCta:    'Reject',
+    cancelCta:    'Cancel',
+  },
   auth: {
     // Welcome screen
     welcomeTitle:    'Welcome to ChoreHero',
