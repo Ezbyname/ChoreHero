@@ -30,3 +30,24 @@ export interface Task {
   status:       TaskStatus;
   points?:      number;
 }
+
+// Task Completion Photo Proof — Slice 1 (schema only; no RPC/mutation path
+// exists yet). One row per completion attempt, not per task — tasks.status
+// remains the workflow authority. See
+// supabase/migrations/20260906000000_task_completion_submissions_schema.sql.
+export type TaskCompletionSubmissionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface TaskCompletionSubmission {
+  id:                    string;
+  taskId:                string;
+  householdId:           string;
+  submittedByProfileId:  string;
+  clientRequestId:       string;
+  photoStoragePath?:     string;
+  status:                TaskCompletionSubmissionStatus;
+  reviewedByProfileId?:  string;
+  reviewedAt?:           string;
+  submittedAt:           string;
+  createdAt:             string;
+  updatedAt:             string;
+}

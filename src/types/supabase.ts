@@ -76,6 +76,11 @@ export type RewardRedemptionStatus =
   | 'rejected'
   | 'cancelled';
 
+export type TaskCompletionSubmissionStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
 // ============================================================
 // DATABASE TYPE
 // Matches the shape expected by createClient<Database>().
@@ -534,6 +539,31 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      // ----------------------------------------------------------
+      // task_completion_submissions
+      // Task Completion Photo Proof — Slice 1 (schema only). One row per
+      // completion attempt; tasks.status remains the workflow authority.
+      // No RPC/mutation path exists yet — added in a later migration.
+      // ----------------------------------------------------------
+      task_completion_submissions: {
+        Row: {
+          id:                      string;
+          task_id:                 string;
+          household_id:            string;
+          submitted_by_profile_id: string;
+          client_request_id:       string;
+          photo_storage_path:      string | null;
+          status:                  TaskCompletionSubmissionStatus;
+          reviewed_by_profile_id:  string | null;
+          reviewed_at:             string | null;
+          submitted_at:            string;
+          created_at:              string;
+          updated_at:              string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -619,6 +649,7 @@ export interface Database {
       task_help_reason:         TaskHelpReason;
       contribution_claim_status: ContributionClaimStatus;
       reward_redemption_status:  RewardRedemptionStatus;
+      task_completion_submission_status: TaskCompletionSubmissionStatus;
     };
   };
 }
