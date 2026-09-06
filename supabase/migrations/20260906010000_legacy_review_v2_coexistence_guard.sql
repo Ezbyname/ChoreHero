@@ -195,7 +195,21 @@ BEGIN
 END;
 $$;
 
+-- REVOKE FROM PUBLIC alone does not make this authenticated-only: a fresh
+-- Slice 2A QA preflight found that both approve_task_completion and
+-- reject_task_completion already carried an explicit, independently
+-- granted anon EXECUTE privilege in QA — not inherited from PUBLIC, but
+-- from Supabase's own default ACL for functions created in schema
+-- public (pg_default_acl, defaclobjtype = 'f'), which grants EXECUTE to
+-- postgres, anon, authenticated, and service_role unless revoked at
+-- creation time. Neither this function's own prior migrations nor this
+-- one previously revoked anon explicitly, so that default grant survived
+-- untouched through every earlier CREATE OR REPLACE. anon is revoked
+-- explicitly below for that reason. service_role is deliberately left
+-- untouched — revoking it is out of Slice 2A's scope and not something
+-- this migration's own problem statement requires.
 REVOKE EXECUTE ON FUNCTION public.approve_task_completion(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.approve_task_completion(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.approve_task_completion(uuid) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.reject_task_completion(p_task_id uuid)
@@ -267,5 +281,9 @@ BEGIN
 END;
 $$;
 
+-- Same anon finding as approve_task_completion above — see that block's
+-- comment for the full explanation (Supabase's default function ACL, not
+-- an inherited PUBLIC grant).
 REVOKE EXECUTE ON FUNCTION public.reject_task_completion(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.reject_task_completion(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.reject_task_completion(uuid) TO authenticated;
