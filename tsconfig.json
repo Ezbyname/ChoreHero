@@ -20,5 +20,17 @@
     // one line is what fixes it, isolated by testing with/without it.
     "types": ["node"]
   },
-  "exclude": ["e2e", "playwright.config.ts", "node_modules", "**/__tests__/**", "scripts/test"]
+  "exclude": [
+    "e2e",
+    "playwright.config.ts",
+    "node_modules",
+    "**/__tests__/**",
+    "scripts/test",
+    // Deno Edge Function entry points only (npm:/jsr: specifiers, Deno
+    // globals, explicit .ts import extensions — none of it resolves under
+    // this project's Node-oriented tsconfig). handler.ts files living
+    // alongside index.ts are deliberately portable/Deno-free and stay
+    // type-checked normally — only the runtime-glue entry point is excluded.
+    "supabase/functions/**/index.ts"
+  ]
 }
