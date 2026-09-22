@@ -1,6 +1,7 @@
 export * from './profiles';
 export * from './households';
 export * from './tasks';
+export * from './taskCompletionV2';
 export * from './rewards';
 export * from './points';
 export * from './contributionClaims';

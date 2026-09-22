@@ -611,6 +611,31 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
       };
+      // Task Completion Photo Proof — Slice 2B
+      // (20260910000000_task_completion_v2_and_task_governance.sql). Args/
+      // Returns copied exactly from the migration's own RETURNS/parameter
+      // list, not shaped to fit any repository-layer type — verified
+      // against the migration source directly.
+      request_task_completion_v2: {
+        Args: {
+          p_task_id:           string;
+          p_client_request_id: string;
+          p_photo_object_id?:  string | null;
+        };
+        Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
+      };
+      approve_task_completion_v2: {
+        Args: {
+          p_submission_id: string;
+        };
+        Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
+      };
+      reject_task_completion_v2: {
+        Args: {
+          p_submission_id: string;
+        };
+        Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
+      };
       request_reward_redemption: {
         Args: {
           p_reward_id:         string;
@@ -675,3 +700,4 @@ export type TaskHelpRequestRow  = Database['public']['Tables']['task_help_reques
 export type ContributionClaimRow = Database['public']['Tables']['contribution_claims']['Row'];
 export type HouseholdInviteRow   = Database['public']['Tables']['household_invites']['Row'];
 export type RewardRedemptionRow  = Database['public']['Tables']['reward_redemptions']['Row'];
+export type TaskCompletionSubmissionRow = Database['public']['Tables']['task_completion_submissions']['Row'];
