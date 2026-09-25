@@ -6,6 +6,7 @@ import {
   fetchTaskCompletionEvidence,
   rejectTaskCompletionV2,
   requestTaskCompletionV2,
+  uploadTaskCompletionEvidence,
 } from '@/lib/repositories/taskCompletionV2';
 
 // Mock-mode coverage only — isSupabaseConfigured is false in this test
@@ -45,4 +46,14 @@ test('fetchTaskCompletionEvidence returns notConfiguredError without throwing wh
 
   assert.equal(result.data, null);
   assert.equal(result.error?.code, 'PGRST_NOT_CONFIGURED');
+});
+
+test('uploadTaskCompletionEvidence returns notConfiguredError without throwing when Supabase is not configured', async () => {
+  const result = await uploadTaskCompletionEvidence({
+    path: 'household-1/task-1/profile-1/photo-1',
+    blob: new Blob(),
+  });
+
+  assert.equal(result.data, null);
+  assert.ok(result.error && 'code' in result.error && result.error.code === 'PGRST_NOT_CONFIGURED');
 });

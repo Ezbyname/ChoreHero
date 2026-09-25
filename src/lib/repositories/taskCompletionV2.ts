@@ -3,6 +3,7 @@ import type {
   FunctionsHttpError,
   FunctionsRelayError,
   PostgrestError,
+  StorageApiError,
 } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { TaskCompletionSubmissionRow } from '@/types/supabase';
@@ -112,4 +113,47 @@ export async function fetchTaskCompletionEvidence(
   });
   if (error || !data) return { data: null, error: error ?? notConfiguredError() };
   return { data, error: null };
+}
+
+// Sibling to RepositoryResult<T> and EdgeFunctionResult<T> — the caller
+// (features/tasks/requestTaskCompletionWithEvidence.ts) runs its own
+// duplicate/ambiguous classification against the real Storage error shape
+// (see isVerifiedDuplicateUploadError in features/tasks/taskCompletionAttempt.ts),
+// which needs the real status/statusCode a lossy-normalized PostgrestError
+// sentinel (the pattern profiles.ts's storageError() uses for avatars)
+// would destroy. StorageUnknownError isn't exported by @supabase/supabase-js
+// (only StorageApiError is, confirmed in that package's own src/index.ts),
+// so the fallback branch is typed as the standard global Error —
+// StorageUnknownError extends StorageError extends Error, so this is exact,
+// not a loosening.
+export type StorageUploadResult<T> =
+  | { data: T;    error: null }
+  | { data: null; error: StorageApiError | PostgrestError | Error };
+
+// Uploads already-normalized evidence bytes (the caller has already
+// re-wrapped the Blob with the correct, picker-provided MIME type — see
+// features/tasks/requestTaskCompletionWithEvidence.ts) to the
+// task-completion-evidence bucket, at an already-constructed canonical
+// path (see buildTaskCompletionEvidencePath in
+// features/tasks/taskCompletionAttempt.ts). Path construction is
+// deliberately NOT this repository's job — unlike uploadProfileAvatarImage's
+// own-path-per-upload pattern for avatars, the evidence path formula
+// depends on task/household/attempt identity this repository has no
+// business reconstructing, and is fixed by request_task_completion_v2
+// itself (see that RPC's own migration comment).
+// upsert is always false, never caller-configurable — evidence is immutable
+// once uploaded; hard-coding this here closes off "just pass upsert:true"
+// as an option by construction, not by convention.
+export async function uploadTaskCompletionEvidence(input: {
+  path: string;
+  blob: Blob;
+}): Promise<StorageUploadResult<{ path: string }>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase.storage
+    .from('task-completion-evidence')
+    .upload(input.path, input.blob, { upsert: false });
+
+  if (error) return { data: null, error };
+  return { data: { path: data.path }, error: null };
 }
