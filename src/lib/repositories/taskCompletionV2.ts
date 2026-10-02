@@ -1,11 +1,11 @@
-import type {
+import {
   FunctionsFetchError,
   FunctionsHttpError,
   FunctionsRelayError,
-  PostgrestError,
-  StorageApiError,
 } from '@supabase/supabase-js';
+import type { PostgrestError, StorageApiError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { supabaseKey, supabaseUrl } from '@/lib/supabaseConfig';
 import type { TaskCompletionSubmissionRow } from '@/types/supabase';
 import { notConfiguredError } from './types';
 import type { RepositoryResult } from './types';
@@ -103,16 +103,91 @@ export async function rejectTaskCompletionV2(
 // FunctionsHttpError (function returned non-2xx — status/body are on
 // error.context, not interpreted here), FunctionsRelayError, or
 // FunctionsFetchError — every case is mapped by the caller.
+//
+// Why direct fetch, not supabase.functions.invoke: @supabase/functions-js
+// at the installed version decodes any response whose Content-Type is
+// outside its explicit binary list (only application/octet-stream and
+// application/pdf) with response.text(), which UTF-8-decodes binary bytes
+// and corrupts image/* evidence (verified live, QA-05). Direct fetch with
+// response.blob() preserves exact bytes. Request contract is otherwise
+// unchanged: same URL, method, body, apikey, and Authorization bearer.
+// The functional security contract (submission_id → live authorization →
+// DB-derived path → bytes) is untouched; X-Client-Info is a telemetry-only
+// label and is intentionally omitted from the direct-fetch headers.
+//
+// Public API has no caller-controllable fields: endpoint URL, apikey, and
+// Authorization bearer are all resolved from the module-level supabase
+// client / supabaseConfig. A screen cannot substitute any of them.
 export async function fetchTaskCompletionEvidence(
   submissionId: string,
 ): Promise<EdgeFunctionResult<Blob>> {
   if (!supabase) return { data: null, error: notConfiguredError() };
-
-  const { data, error } = await supabase.functions.invoke<Blob>('task-completion-evidence', {
-    body: { submission_id: submissionId },
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token ?? supabaseKey;
+  return fetchEvidenceWithTransport(submissionId, {
+    endpointUrl: `${supabaseUrl}/functions/v1/task-completion-evidence`,
+    apiKey:      supabaseKey,
+    bearerToken: accessToken,
+    fetchFn:     globalThis.fetch.bind(globalThis),
   });
-  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
-  return { data, error: null };
+}
+
+// Module-private. Not exported; not reachable from the repository barrel.
+// The public fetchTaskCompletionEvidence above is the only sanctioned
+// entry point to the Edge Function. Extracted into a helper purely for
+// local readability — tests do NOT import it; they drive the real public
+// function with env-controlled `supabaseConfig` + stubbed globalThis.fetch
+// + stubbed supabase.auth.getSession in a process-isolated test file (see
+// src/lib/repositories/__tests__/taskCompletionV2.evidenceFetch.test.ts).
+async function fetchEvidenceWithTransport(
+  submissionId: string,
+  transport: {
+    endpointUrl: string;
+    apiKey:      string;
+    bearerToken: string;
+    fetchFn:     typeof fetch;
+  },
+): Promise<EdgeFunctionResult<Blob>> {
+  const requestInit: RequestInit = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey:         transport.apiKey,
+      Authorization:  `Bearer ${transport.bearerToken}`,
+    },
+    body: JSON.stringify({ submission_id: submissionId }),
+  };
+
+  let response: Response;
+  try {
+    response = await transport.fetchFn(transport.endpointUrl, requestInit);
+  } catch (fetchError) {
+    return { data: null, error: new FunctionsFetchError(fetchError) };
+  }
+
+  if (response.headers.get('x-relay-error') === 'true') {
+    return { data: null, error: new FunctionsRelayError(response) };
+  }
+
+  if (!response.ok) {
+    return { data: null, error: new FunctionsHttpError(response) };
+  }
+
+  // Body-consumption may itself reject (truncated stream, decoding failure,
+  // runtime-specific Response.blob() errors). Route such a failure through
+  // the same existing repository error contract rather than escaping as an
+  // uncaught exception. FunctionsFetchError is the closest existing
+  // classification: installed @supabase/functions-js (verified against its
+  // own types.ts) carries FunctionsFetchError for every rejection raised
+  // "before/during request OR while receiving the body" when wrapping
+  // fetch, and does not define a separate body-consumption class.
+  let blob: Blob;
+  try {
+    blob = await response.blob();
+  } catch (bodyError) {
+    return { data: null, error: new FunctionsFetchError(bodyError) };
+  }
+  return { data: blob, error: null };
 }
 
 // Sibling to RepositoryResult<T> and EdgeFunctionResult<T> — the caller
