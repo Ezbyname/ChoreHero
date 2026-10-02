@@ -9,7 +9,7 @@ import { TaskAdapter } from '@/domain/adapters';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
-import { requestTaskCompletion } from '@/features/tasks/requestTaskCompletion';
+import { TaskCompletionModal, type TaskCompletionModalTask } from '@/features/tasks/components/TaskCompletionModal';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -49,6 +49,12 @@ export function MyTasksScreen() {
 
   const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
   const [feedback, setFeedback]                   = useState<string | null>(null);
+  // Target of the shared Task Completion V2 Modal. null when closed.
+  // Child-role 'complete' actions open this Modal rather than invoking
+  // the legacy v1 requestTaskCompletion path — the Modal drives the
+  // approved V2 orchestration (upload + request_task_completion_v2).
+  const [completionTarget, setCompletionTarget] = useState<TaskCompletionModalTask | null>(null);
+  const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
 
   // 'claim'/'complete' branching mirrors TodayScreen's handleTaskAction —
   // see that function's own comment for why 'complete' routes by role
@@ -79,22 +85,16 @@ export function MyTasksScreen() {
         );
       }
     } else if (role === 'child') {
-      const result = await requestTaskCompletion({
-        taskId:      activity.id,
+      // Open the shared Task Completion V2 Modal. Nothing is sent to the
+      // backend here — the Modal owns the picker, preview, replace/remove
+      // and the actual submission through submitTaskCompletionWithEvidence.
+      setCompletionTarget({
+        id:          activity.id,
         householdId: household.id,
-        profileId:   user.id,
-        role,
+        title:       activity.title,
       });
-
-      if (!result.ok) {
-        setFeedback(
-          result.reason === 'not_authorized'
-            ? copy.activityCard.requestNotAllowed
-            : result.reason === 'not_open'
-              ? copy.activityCard.requestNotOpen
-              : copy.activityCard.requestError,
-        );
-      }
+      setPendingActivityId(null);
+      return;
     } else {
       const result = await completeTask({
         taskId:      activity.id,
@@ -141,6 +141,18 @@ export function MyTasksScreen() {
           {feedback && <Text style={styles.feedback}>{feedback}</Text>}
         </ScrollView>
       )}
+
+      <TaskCompletionModal
+        task={completionTarget}
+        onCompleted={() => {
+          setCompletionTarget(null);
+          // Re-run hydration so the task's new needs_attention status +
+          // the new pending submission are reflected in the UI. Same
+          // pattern as ProfileSetupScreen's post-create refresh.
+          requestAppDataHydrationRetry();
+        }}
+        onClose={() => setCompletionTarget(null)}
+      />
     </Screen>
   );
 }

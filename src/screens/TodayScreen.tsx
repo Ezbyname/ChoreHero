@@ -19,7 +19,7 @@ import { approveTaskCompletion } from '@/features/tasks/approveTaskCompletion';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
 import { rejectTaskCompletion } from '@/features/tasks/rejectTaskCompletion';
-import { requestTaskCompletion } from '@/features/tasks/requestTaskCompletion';
+import { TaskCompletionModal, type TaskCompletionModalTask } from '@/features/tasks/components/TaskCompletionModal';
 import {
   getTasksNeedingAttention,
   getUnassignedTasks,
@@ -457,6 +457,10 @@ export function TodayScreen() {
 
   const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
+  // Target of the shared Task Completion V2 Modal — see the Modal's own
+  // handling comment below.
+  const [completionTarget, setCompletionTarget] = useState<TaskCompletionModalTask | null>(null);
+  const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
 
   // 'claim' and 'complete' are wired here. The 'complete' action branches
   // by role: privileged (owner/admin/adult) direct completion (EX-05,
@@ -491,22 +495,16 @@ export function TodayScreen() {
         );
       }
     } else if (role === 'child') {
-      const result = await requestTaskCompletion({
-        taskId:      activity.id,
+      // Open the shared Task Completion V2 Modal. No backend call here —
+      // the Modal owns the picker, preview, replace/remove, and the
+      // actual submission via submitTaskCompletionWithEvidence.
+      setCompletionTarget({
+        id:          activity.id,
         householdId: household.id,
-        profileId:   user.id,
-        role,
+        title:       activity.title,
       });
-
-      if (!result.ok) {
-        setTaskActionFeedback(
-          result.reason === 'not_authorized'
-            ? copy.activityCard.requestNotAllowed
-            : result.reason === 'not_open'
-              ? copy.activityCard.requestNotOpen
-              : copy.activityCard.requestError,
-        );
-      }
+      setPendingTaskActivityId(null);
+      return;
     } else {
       const result = await completeTask({
         taskId:      activity.id,
@@ -599,6 +597,15 @@ export function TodayScreen() {
           />
         )}
       </ScrollView>
+
+      <TaskCompletionModal
+        task={completionTarget}
+        onCompleted={() => {
+          setCompletionTarget(null);
+          requestAppDataHydrationRetry();
+        }}
+        onClose={() => setCompletionTarget(null)}
+      />
     </Screen>
   );
 }
