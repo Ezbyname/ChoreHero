@@ -330,3 +330,117 @@ test('no service-role query is used for authorization — supabaseAdmin.from() t
 
   assert.equal(res.status, 200);
 });
+
+// ── Multi-photo: photo_index (photos 2..5) ──────────────────────────────────
+
+// Admin client that also resolves extra-photo paths. Records every call so
+// tests can prove it is reached only after caller-scoped authorization.
+function makeFakeAdminWithExtras(
+  extras: Record<number, string>,
+  calls: string[],
+  { extraError = null }: { extraError?: { message: string } | null } = {},
+): SupabaseClient {
+  return {
+    from(table: string) {
+      calls.push(`from:${table}`);
+      const filters: Record<string, unknown> = {};
+      const chain = {
+        select(_c: string) { return chain; },
+        eq(col: string, val: unknown) { filters[col] = val; return chain; },
+        async maybeSingle() {
+          calls.push(`extra:${String(filters.submission_id)}:${String(filters.position)}`);
+          if (extraError) return { data: null, error: extraError };
+          const p = extras[filters.position as number];
+          return { data: p ? { storage_path: p } : null, error: null };
+        },
+      };
+      return chain;
+    },
+    storage: {
+      from(_bucket: string) {
+        return {
+          async download(path: string) {
+            calls.push(`download:${path}`);
+            return { data: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }), error: null };
+          },
+        };
+      },
+    },
+  } as unknown as SupabaseClient;
+}
+
+test('photo_index omitted or 0 serves photo 1 and never queries the extras table', async () => {
+  for (const body of [{ submission_id: VALID_SUBMISSION_ID }, { submission_id: VALID_SUBMISSION_ID, photo_index: 0 }]) {
+    const calls: string[] = [];
+    const res = await handleTaskCompletionEvidenceRequest(makeRequest(body), {
+      supabase:      makeFakeCallerClient({ data: { id: VALID_SUBMISSION_ID, photo_storage_path: VALID_PATH }, error: null }),
+      supabaseAdmin: makeFakeAdminWithExtras({ 1: 'x' }, calls),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(calls, [`download:${VALID_PATH}`]);
+  }
+});
+
+test('photo_index 1..4 resolves that position for the AUTHORIZED submission id only, then downloads it', async () => {
+  const calls: string[] = [];
+  const res = await handleTaskCompletionEvidenceRequest(
+    makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index: 3 }),
+    {
+      supabase:      makeFakeCallerClient({ data: { id: VALID_SUBMISSION_ID, photo_storage_path: VALID_PATH }, error: null }),
+      supabaseAdmin: makeFakeAdminWithExtras({ 3: 'H_A/T01/child-uid/OBJ4' }, calls),
+    },
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, [
+    'from:task_completion_submission_photos',
+    `extra:${VALID_SUBMISSION_ID}:3`,
+    'download:H_A/T01/child-uid/OBJ4',
+  ]);
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), new Uint8Array([7, 7]));
+});
+
+test('photo_index on a submission the caller cannot see is 404 and never reaches the admin client', async () => {
+  const calls: string[] = [];
+  const res = await handleTaskCompletionEvidenceRequest(
+    makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index: 1 }),
+    { supabase: makeFakeCallerClient({ data: null, error: null }), supabaseAdmin: makeFakeAdminWithExtras({ 1: 'p' }, calls) },
+  );
+  assert.equal(res.status, 404);
+  assert.deepEqual(calls, []);
+});
+
+test('photo_index beyond the photos that exist is the same 404; an extras lookup error is 500', async () => {
+  const visible = () => makeFakeCallerClient({ data: { id: VALID_SUBMISSION_ID, photo_storage_path: VALID_PATH }, error: null });
+  const missing = await handleTaskCompletionEvidenceRequest(
+    makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index: 4 }),
+    { supabase: visible(), supabaseAdmin: makeFakeAdminWithExtras({ 1: 'p' }, []) },
+  );
+  assert.equal(missing.status, 404);
+  const broken = await handleTaskCompletionEvidenceRequest(
+    makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index: 1 }),
+    { supabase: visible(), supabaseAdmin: makeFakeAdminWithExtras({}, [], { extraError: { message: 'x' } }) },
+  );
+  assert.equal(broken.status, 500);
+});
+
+test('invalid photo_index values are 400 before any query (negative, 5, fraction, string, null)', async () => {
+  for (const photo_index of [-1, 5, 1.5, '1', null, true]) {
+    const calls: string[] = [];
+    const captured: { table?: string } = {};
+    const res = await handleTaskCompletionEvidenceRequest(
+      makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index }),
+      { supabase: makeFakeCallerClient({ data: null, error: null }, captured), supabaseAdmin: makeFakeAdminWithExtras({}, calls) },
+    );
+    assert.equal(res.status, 400, `photo_index=${JSON.stringify(photo_index)}`);
+    assert.equal(captured.table, undefined);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('a path-like field next to photo_index is still rejected outright', async () => {
+  const res = await handleTaskCompletionEvidenceRequest(
+    makeRequest({ submission_id: VALID_SUBMISSION_ID, photo_index: 1, storage_path: 'H/T/U/O' }),
+    { supabase: makeFakeCallerClient({ data: null, error: null }), supabaseAdmin: makeFakeAdminWithExtras({}, []) },
+  );
+  assert.equal(res.status, 400);
+});

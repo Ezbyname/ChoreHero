@@ -15,14 +15,20 @@
 // is the thin Deno entry point that wires this up to the real runtime — see
 // that file's own header comment. Do not add business logic to index.ts.
 //
-// Confused-deputy prevention: the client sends ONLY submission_id, never a
-// storage path. The path used for the privileged Storage read is taken
-// exclusively from the row returned by the caller-scoped authorization
-// query — there is no code path through which client input reaches the
-// admin Storage call.
+// Confused-deputy prevention: the client sends ONLY submission_id (plus,
+// for photos 2..5 of a multi-photo submission, a small integer photo_index),
+// never a storage path. The path used for the privileged Storage read is
+// taken exclusively from server-side rows: photo 1 from the row returned by
+// the caller-scoped authorization query, photos 2..5 from
+// task_completion_submission_photos keyed by THAT authorized row's id and
+// the validated index — there is no code path through which client input
+// reaches the admin Storage call as a path.
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const EVIDENCE_BUCKET = 'task-completion-evidence';
+// Photos 2..5 (positions 1..4); see 20261030000000_task_completion_multi_photo.sql.
+const EXTRA_PHOTOS_TABLE = 'task_completion_submission_photos';
+const MAX_PHOTO_INDEX = 4;
 
 // Applied to every response this handler produces, success or failure.
 // Vary: Authorization — this response depends on who's asking, never share
@@ -69,8 +75,10 @@ export interface EvidenceHandlerContext {
   // truth for "who can see this submission."
   supabase: SupabaseClient;
   // service-role — bypasses RLS. Used ONLY after the authorization query
-  // above has already succeeded, and only to read the exact path that
-  // query returned. Never used for the authorization decision itself.
+  // above has already succeeded: to resolve an extra photo's path for that
+  // authorized submission (clients have no access to
+  // task_completion_submission_photos at all), and to read the object.
+  // Never used for the authorization decision itself.
   supabaseAdmin: SupabaseClient;
 }
 
@@ -101,14 +109,32 @@ export async function handleTaskCompletionEvidenceRequest(
   // rejecting it: ignoring still parses and processes attacker-controlled
   // input as far as this validation step, leaving room for a future change
   // to accidentally start reading it. Rejecting closes that off entirely.
+  //
+  // photo_index (0-based, optional, default 0) is the only other accepted
+  // field. It is an index, never a path, and is validated as an integer in
+  // [0, MAX_PHOTO_INDEX] before anything else happens.
   const bodyKeys = Object.keys(body as Record<string, unknown>);
-  if (bodyKeys.length !== 1 || bodyKeys[0] !== 'submission_id') {
+  if (
+    !bodyKeys.includes('submission_id') ||
+    bodyKeys.some((k) => k !== 'submission_id' && k !== 'photo_index')
+  ) {
     return badRequest('unexpected_fields');
   }
 
   const submissionId = (body as Record<string, unknown>).submission_id;
   if (typeof submissionId !== 'string' || !UUID_PATTERN.test(submissionId)) {
     return badRequest('invalid_submission_id');
+  }
+
+  const rawIndex = (body as Record<string, unknown>).photo_index;
+  const photoIndex = rawIndex === undefined ? 0 : rawIndex;
+  if (
+    typeof photoIndex !== 'number' ||
+    !Number.isInteger(photoIndex) ||
+    photoIndex < 0 ||
+    photoIndex > MAX_PHOTO_INDEX
+  ) {
+    return badRequest('invalid_photo_index');
   }
 
   // Live authorization gate. Selects only the fields actually needed.
@@ -128,11 +154,27 @@ export async function handleTaskCompletionEvidenceRequest(
     return notFound();
   }
 
+  // Photo 1 is the authorized row's own path. Photos 2..5 are resolved for
+  // THAT authorized submission id only; a missing position is the same
+  // not-found as an invisible submission.
+  let path: string = submission.photo_storage_path;
+  if (photoIndex > 0) {
+    const { data: extra, error: extraError } = await ctx.supabaseAdmin
+      .from(EXTRA_PHOTOS_TABLE)
+      .select('storage_path')
+      .eq('submission_id', submission.id)
+      .eq('position', photoIndex)
+      .maybeSingle();
+    if (extraError) return serverError();
+    if (!extra || !extra.storage_path) return notFound();
+    path = extra.storage_path;
+  }
+
   // Privileged read — reached ONLY after the caller-scoped query above
-  // succeeded, using exclusively the path it returned.
+  // succeeded, using exclusively a server-derived path.
   const { data: blob, error: downloadError } = await ctx.supabaseAdmin.storage
     .from(EVIDENCE_BUCKET)
-    .download(submission.photo_storage_path);
+    .download(path);
 
   if (downloadError || !blob) {
     return serverError();

@@ -39,6 +39,8 @@ export async function getRewardsForHousehold(
     query = query.limit(options.limit) as typeof query;
   }
 
+  if (options?.signal) query = query.abortSignal(options.signal) as typeof query;
+
   const { data, error } = await query;
   if (error) return { data: null, error };
   return { data: data ?? [], error: null };

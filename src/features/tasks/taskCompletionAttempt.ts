@@ -192,6 +192,7 @@ export function classifyRpcError(
     case 'CH014':
     case 'CH018':
     case 'CH019':
+    case 'CH021': // request_task_completion_v3: invalid photo set
       return 'terminal_other';
     default:
       return 'generic_failure';

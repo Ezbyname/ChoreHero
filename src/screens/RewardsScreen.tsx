@@ -1,14 +1,21 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { TextField } from '@/components/ui/TextField';
 import { copy } from '@/content/copy';
 import { getMemberNameByUserId } from '@/features/household/householdUtils';
 import { RewardCard } from '@/features/rewards/components/RewardCard';
 import { createReward } from '@/features/rewards/createReward';
 import { computeMyPointsSummary, selectReservedPendingSnapshots } from '@/features/rewards/pointsSummary';
 import { sortRewardsForDisplay } from '@/features/rewards/sortRewards';
+import { createSingleFlight } from '@/features/tasks/createTaskFormState';
+import { useHouseholdRefreshControl } from '@/features/sync/useHouseholdRefreshControl';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanCancelRedemption,
@@ -22,7 +29,7 @@ import {
   selectRewardRedemptions,
   selectRewards,
 } from '@/store/selectors';
-import { colors, radius, spacing, typography } from '@/theme';
+import { colors, sizes, spacing, typography } from '@/theme';
 
 function CreateRewardForm({
   householdId,
@@ -37,10 +44,12 @@ function CreateRewardForm({
   const [description, setDescription] = useState('');
   const [pointsText, setPointsText]   = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback]       = useState<string | null>(null);
+  const [result, setResult]           = useState<{ kind: 'created'; title: string } | { kind: 'failed' } | null>(null);
   const [validation, setValidation]   = useState<string | null>(null);
+  // One tap = one reward (a second tap before the re-render is dropped).
+  const singleFlight = useRef(createSingleFlight()).current;
 
-  async function handleCreate() {
+  async function doCreate() {
     if (isSubmitting) return;
 
     const trimmed = title.trim();
@@ -56,91 +65,88 @@ function CreateRewardForm({
     }
 
     setValidation(null);
-    setFeedback(null);
+    setResult(null);
     setIsSubmitting(true);
 
-    const result = await createReward({
-      householdId,
-      title:              trimmed,
-      description:        description.trim() || undefined,
-      requiredPoints,
-      createdByProfileId,
-      role,
-    });
+    try {
+      const created = await createReward({
+        householdId,
+        title:              trimmed,
+        description:        description.trim() || undefined,
+        requiredPoints,
+        createdByProfileId,
+        role,
+      });
 
-    if (result.ok) {
-      setTitle('');
-      setDescription('');
-      setPointsText('');
-      setFeedback(copy.createReward.success);
-    } else {
-      setFeedback(copy.createReward.error);
+      if (created.ok) {
+        setTitle('');
+        setDescription('');
+        setPointsText('');
+        setResult({ kind: 'created', title: trimmed });
+      } else {
+        setResult({ kind: 'failed' });
+      }
+    } catch {
+      setResult({ kind: 'failed' });
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.createReward.title}</Text>
-
-      <TextInput
-        style={[styles.input, validation && styles.inputError]}
-        value={title}
-        onChangeText={(text) => {
-          setTitle(text);
-          if (validation) setValidation(null);
-        }}
-        placeholder={copy.createReward.fieldPlaceholder}
-        placeholderTextColor={colors.textMuted}
-        editable={!isSubmitting}
-        returnKeyType="done"
-      />
-
-      <Text style={styles.label}>{copy.createReward.descriptionLabel}</Text>
-      <TextInput
-        style={[styles.input, styles.multilineInput]}
-        value={description}
-        onChangeText={setDescription}
-        placeholder={copy.createReward.descriptionPlaceholder}
-        placeholderTextColor={colors.textMuted}
-        editable={!isSubmitting}
-        multiline
-      />
-
-      <Text style={styles.label}>{copy.createReward.pointsLabel}</Text>
-      <TextInput
-        style={styles.input}
-        value={pointsText}
-        onChangeText={(text) => {
-          setPointsText(text);
-          if (validation) setValidation(null);
-        }}
-        placeholder={copy.createReward.pointsPlaceholder}
-        placeholderTextColor={colors.textMuted}
-        keyboardType="number-pad"
-        editable={!isSubmitting}
-      />
-      {validation && <Text style={styles.validationText}>{validation}</Text>}
-
-      <TouchableOpacity
-        style={[styles.button, isSubmitting && styles.buttonDisabled]}
-        onPress={handleCreate}
-        disabled={isSubmitting}
-        activeOpacity={0.8}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator size="small" color={colors.surface} />
-        ) : (
-          <Text style={styles.buttonText}>{copy.createReward.button}</Text>
+      <SectionHeader title={copy.createReward.title} />
+      <Card style={styles.formCard}>
+        {result?.kind === 'created' && (
+          <Banner tone="success" title={copy.createReward.success} text={result.title} />
         )}
-      </TouchableOpacity>
-
-      {feedback && <Text style={styles.feedbackText}>{feedback}</Text>}
+        <TextField
+          label={copy.createReward.titleLabel}
+          value={title}
+          onChangeText={(text) => {
+            setTitle(text);
+            setResult(null);
+            if (validation) setValidation(null);
+          }}
+          placeholder={copy.createReward.fieldPlaceholder}
+          editable={!isSubmitting}
+          returnKeyType="done"
+        />
+        <TextField
+          label={copy.createReward.descriptionLabel}
+          value={description}
+          onChangeText={setDescription}
+          placeholder={copy.createReward.descriptionPlaceholder}
+          editable={!isSubmitting}
+          multiline
+        />
+        <TextField
+          label={copy.createReward.pointsLabel}
+          value={pointsText}
+          onChangeText={(text) => {
+            setPointsText(text);
+            if (validation) setValidation(null);
+          }}
+          placeholder={copy.createReward.pointsPlaceholder}
+          keyboardType="number-pad"
+          editable={!isSubmitting}
+          error={validation}
+        />
+        {result?.kind === 'failed' && <Banner tone="danger" text={copy.createReward.error} />}
+        <AppButton
+          label={copy.createReward.button}
+          icon="add-circle-outline"
+          onPress={() => { void singleFlight(() => doCreate()); }}
+          busy={isSubmitting}
+          busyLabel={copy.createReward.creating}
+        />
+      </Card>
     </View>
   );
 }
 
 export function RewardsScreen() {
+  const refreshControl = useHouseholdRefreshControl();
   const rewards           = useAppStore(selectRewards);
   const pointsBalances    = useAppStore(selectPointsBalances);
   const myBalance          = useAppStore(selectMyPointsBalance);
@@ -211,6 +217,7 @@ export function RewardsScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
+        refreshControl={refreshControl}
       >
         {canCreateRewards && household && user && (
           <CreateRewardForm
@@ -220,35 +227,45 @@ export function RewardsScreen() {
           />
         )}
 
-        <Text style={styles.sectionLabel}>{copy.rewards.familyPoints}</Text>
-        <View style={styles.pointsSection}>
-          {pointsBalances.map((pb) => (
-            <View key={pb.userId} style={styles.pointsRow}>
-              <Text style={styles.pointsName}>
-                {getMemberNameByUserId(members, pb.userId)}
-              </Text>
-              <Text style={styles.pointsValue}>
-                {pb.balance} {copy.rewards.pointsLabel}
-              </Text>
-            </View>
-          ))}
-        </View>
-
         {role === 'child' && (
-          <View style={styles.pointsSection}>
-            <View style={styles.pointsRow}>
-              <Text style={styles.pointsName}>{copy.rewards.myPointsAvailable.replace('{n}', String(viewerBalance))}</Text>
-            </View>
-            <View style={styles.pointsRow}>
-              <Text style={styles.pointsName}>{copy.rewards.myPointsPending.replace('{n}', String(viewerPending))}</Text>
+          <View style={styles.section}>
+            <View style={styles.myPointsRow}>
+              <Card style={styles.myPointsCard} accent="primary">
+                <Text style={styles.myPointsValue}>{viewerBalance}</Text>
+                <Text style={styles.myPointsLabel}>{copy.rewards.myPointsAvailableLabel}</Text>
+              </Card>
+              <Card style={styles.myPointsCard}>
+                <Text style={styles.myPointsValue}>{viewerPending}</Text>
+                <Text style={styles.myPointsLabel}>{copy.rewards.myPointsPendingLabel}</Text>
+              </Card>
             </View>
           </View>
         )}
 
-        <Text style={styles.sectionLabel}>{copy.rewards.availableRewards}</Text>
+        <View style={styles.section}>
+          <SectionHeader title={copy.rewards.familyPoints} />
+          <Card style={styles.pointsCard}>
+            {pointsBalances.length === 0 ? (
+              <Text style={styles.pointsName}>{copy.rewards.noPointsYet}</Text>
+            ) : pointsBalances.map((pb, index) => (
+              <View key={pb.userId} style={[styles.pointsRow, index > 0 && styles.pointsRowDivider]}>
+                <Text style={styles.pointsName}>
+                  {getMemberNameByUserId(members, pb.userId)}
+                </Text>
+                <Text style={styles.pointsValue}>
+                  ⭐ {pb.balance} {copy.rewards.pointsLabel}
+                </Text>
+              </View>
+            ))}
+          </Card>
+        </View>
+
+        <SectionHeader title={copy.rewards.availableRewards} count={activeRewards.length} />
 
         {activeRewards.length === 0 ? (
-          <EmptyState message={copy.rewards.noRewards} emoji="🎁" />
+          <View style={styles.empty}>
+            <EmptyState message={copy.rewards.noRewards} emoji="🎁" />
+          </View>
         ) : (
           activeRewards.map((reward) => (
             <RewardCard
@@ -278,94 +295,53 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom:     spacing.xxxl,
   },
-  sectionLabel: {
-    ...typography.caption,
-    color:         colors.textMuted,
-    fontWeight:    '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginBottom:  spacing.sm,
-    marginTop:     spacing.lg,
+  section: {
+    marginBottom: spacing.xl,
   },
-  pointsSection: {
-    backgroundColor: colors.surface,
-    borderRadius:    12,
-    borderWidth:     1,
-    borderColor:     colors.borderSoft,
+  formCard: {
+    gap: spacing.md,
+  },
+  empty: {
+    minHeight: 200,
+  },
+  myPointsRow: {
+    flexDirection: 'row',
+    gap:           spacing.md,
+  },
+  myPointsCard: {
+    flex:       1,
+    alignItems: 'center',
+    gap:        2,
+  },
+  myPointsValue: {
+    ...typography.title,
+    color: colors.primary,
+  },
+  myPointsLabel: {
+    ...typography.label,
+    color:     colors.textSecondary,
+    textAlign: 'center',
+  },
+  pointsCard: {
     paddingVertical: spacing.xs,
-    marginBottom:    spacing.md,
   },
   pointsRow: {
-    flexDirection:     'row',
-    justifyContent:    'space-between',
-    alignItems:        'center',
-    paddingVertical:   spacing.sm,
-    paddingHorizontal: spacing.lg,
+    flexDirection:   'row',
+    justifyContent:  'space-between',
+    alignItems:      'center',
+    minHeight:       sizes.tapTarget,
+    paddingVertical: spacing.sm,
+  },
+  pointsRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
   },
   pointsName: {
     ...typography.body,
     color: colors.textPrimary,
   },
   pointsValue: {
-    ...typography.body,
-    color:      colors.primary,
-    fontWeight: '600',
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    ...typography.body,
-    color:        colors.textPrimary,
-    fontWeight:   '600',
-    marginBottom: spacing.md,
-  },
-  label: {
-    ...typography.caption,
-    color:      colors.textMuted,
-    fontWeight: '600',
-    marginTop:  spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    ...typography.body,
-    color:             colors.textPrimary,
-    backgroundColor:   colors.surface,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    borderRadius:      radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.sm,
-  },
-  multilineInput: {
-    minHeight:         72,
-    textAlignVertical: 'top',
-  },
-  inputError: {
-    borderColor: '#B91C1C',
-  },
-  validationText: {
-    ...typography.caption,
-    color: '#B91C1C',
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginTop:       spacing.md,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  feedbackText: {
-    ...typography.caption,
-    color:     colors.textMuted,
-    marginTop: spacing.sm,
+    ...typography.bodyStrong,
+    color: colors.primary,
   },
 });

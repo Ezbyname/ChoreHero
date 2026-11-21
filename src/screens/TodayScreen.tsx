@@ -1,29 +1,46 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { Banner } from '@/components/ui/Banner';
+import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { fieldStyles } from '@/components/ui/TextField';
 import { copy } from '@/content/copy';
 import { ContributionClaimAdapter, RewardRedemptionAdapter, TaskAdapter } from '@/domain/adapters';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { approveContributionClaim } from '@/features/contributions/approveContributionClaim';
 import { claimContribution } from '@/features/contributions/claimContribution';
+import { claimFormStacked } from '@/features/contributions/claimFormLayout';
+import {
+  INITIAL_CLAIM_FORM_PHASE,
+  canSubmitClaim,
+  deriveClaimFormView,
+  onClaimSubmitResult,
+  onClaimSubmitStarted,
+  onClaimSubmitThrew,
+  onClaimTitleEdited,
+  type ClaimFormPhase,
+} from '@/features/contributions/claimContributionFormState';
 import { rejectContributionClaim } from '@/features/contributions/rejectContributionClaim';
 import { approveRewardRedemption } from '@/features/rewards/approveRewardRedemption';
 import { ConfirmRewardReviewModal } from '@/features/rewards/components/ConfirmRewardReviewModal';
 import { rejectRewardRedemption } from '@/features/rewards/rejectRewardRedemption';
 import { createConfirmGuard } from '@/features/rewards/rewardReviewConfirmationUx';
 import type { ReviewAction } from '@/features/rewards/rewardReviewConfirmationUx';
-import { approveTaskCompletion } from '@/features/tasks/approveTaskCompletion';
+import { appSounds } from '@/features/sounds/appSounds';
+import { requestHouseholdRefresh } from '@/features/sync/householdRefresh';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
-import { rejectTaskCompletion } from '@/features/tasks/rejectTaskCompletion';
+import { PendingCompletionModal, type PendingCompletionModalTask } from '@/features/tasks/components/PendingCompletionModal';
 import { TaskCompletionModal, type TaskCompletionModalTask } from '@/features/tasks/components/TaskCompletionModal';
-import {
-  getTasksNeedingAttention,
-  getUnassignedTasks,
-} from '@/features/tasks/taskFilters';
+import { TaskReviewEvidenceModal, type TaskReviewEvidenceModalTask } from '@/features/tasks/components/TaskReviewEvidenceModal';
+import type { ReviewDecision } from '@/features/tasks/components/taskReviewEvidenceUiState';
+import { buildTodaySections, pendingPhotoCountByTask } from '@/features/tasks/taskListSections';
+import { applyViewerTaskActions } from '@/features/tasks/taskViewerActions';
+import { useHouseholdRefreshControl } from '@/features/sync/useHouseholdRefreshControl';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanApproveTaskCompletion,
@@ -38,41 +55,8 @@ import {
   selectRewards,
   selectTasks,
 } from '@/store/selectors';
-import { colors, radius, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, typography } from '@/theme';
 import type { ContributionClaim, HouseholdMember, Reward, RewardRedemption, Task } from '@/types';
-
-function isToday(isoString: string): boolean {
-  const d   = new Date(isoString);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth()    === now.getMonth()    &&
-    d.getDate()     === now.getDate()
-  );
-}
-
-function getTodayTasks(tasks: Task[]): Task[] {
-  const attention  = getTasksNeedingAttention(tasks);
-  const unassigned = getUnassignedTasks(tasks);
-  const dueToday   = tasks.filter(
-    (t) =>
-      t.status !== 'completed'       &&
-      t.status !== 'needs_attention' &&
-      t.assigneeId !== undefined     &&
-      t.dueAt !== undefined          &&
-      isToday(t.dueAt),
-  );
-
-  const seen   = new Set<string>();
-  const result: Task[] = [];
-  for (const task of [...attention, ...unassigned, ...dueToday]) {
-    if (!seen.has(task.id)) {
-      seen.add(task.id);
-      result.push(task);
-    }
-  }
-  return result;
-}
 
 // ── Contribution claim review section (parent flow) ──────────────────────────
 // Contribution ≠ Task: rendered from contributionClaims state, never derived
@@ -86,7 +70,7 @@ interface ReviewSectionProps {
   reviewerId:  string;
 }
 
-function ContributionReviewSection({ claims, members, householdId, role, reviewerId }: ReviewSectionProps) {
+export function ContributionReviewSection({ claims, members, householdId, role, reviewerId }: ReviewSectionProps) {
   const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
 
   const activities = useMemo(
@@ -107,7 +91,7 @@ function ContributionReviewSection({ claims, members, householdId, role, reviewe
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.contributionClaims.reviewSectionTitle}</Text>
+      <SectionHeader title={copy.contributionClaims.reviewSectionTitle} count={claims.length} />
       <ActivityList
         activities={activities}
         members={members}
@@ -119,91 +103,81 @@ function ContributionReviewSection({ claims, members, householdId, role, reviewe
 }
 
 // ── Task review section (parent flow, EX-07) ──────────────────────────────────
-// Reviews tasks.status = 'needs_attention' directly — a different
-// underlying record from ContributionReviewSection above, per the
-// contract's "alongside the existing contribution-claims review section,
-// extend not replace" instruction. approve_task_completion/
-// reject_task_completion remain the authoritative mutation boundary;
-// this section only calls them and reflects the result.
+// Reviews tasks.status = 'needs_attention'. Approve / Decline open the shared
+// TaskReviewEvidenceModal, which owns the pending-submission lookup, the
+// authorized evidence fetch, and the V2 approve/reject orchestration. Each
+// card shows how many photos the pending submission has — from submission
+// metadata only; no evidence bytes are fetched for the list. This is the
+// ONLY place a reviewer sees an actionable pending task (see
+// buildTodaySections): the general list below never repeats it.
 
 interface TaskReviewSectionProps {
   tasks:       Task[];
   members:     HouseholdMember[];
-  householdId: string;
   role:        string | null;
+  photoCounts: Map<string, number>;
 }
 
-function TaskReviewSection({ tasks, members, householdId, role }: TaskReviewSectionProps) {
-  const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
-  const [feedback, setFeedback]                   = useState<string | null>(null);
+export function TaskReviewSection({ tasks, members, role, photoCounts }: TaskReviewSectionProps) {
+  const [reviewTarget, setReviewTarget]     = useState<TaskReviewEvidenceModalTask | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<ReviewDecision | null>(null);
 
   const activities = useMemo(
     () => tasks.map(TaskAdapter.toFamilyActivity),
     [tasks],
   );
 
-  async function handleAction(activity: FamilyActivity, action: ActivityAction) {
-    if (pendingActivityId) return;
+  function handleAction(activity: FamilyActivity, action: ActivityAction) {
     if (action !== 'approve' && action !== 'decline') return;
+    const task = tasks.find((t) => t.id === activity.id);
+    if (!task || !task.householdId) return;
+    // No network action at card-tap time — the decision happens in the
+    // Modal, after the reviewer has seen the evidence.
+    setReviewTarget({ id: task.id, householdId: task.householdId, title: task.title });
+    setReviewDecision(action === 'approve' ? 'approve' : 'reject');
+  }
 
-    setPendingActivityId(activity.id);
-    setFeedback(null);
-
-    const result = action === 'approve'
-      ? await approveTaskCompletion({ taskId: activity.id, householdId, role })
-      : await rejectTaskCompletion({ taskId: activity.id, householdId, role });
-
-    if (!result.ok) {
-      setFeedback(
-        result.reason === 'not_pending'
-          ? copy.taskReview.notPending
-          : action === 'approve'
-            ? copy.taskReview.approveError
-            : copy.taskReview.rejectError,
-      );
-    }
-
-    setPendingActivityId(null);
+  function closeReview() {
+    setReviewTarget(null);
+    setReviewDecision(null);
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.taskReview.reviewSectionTitle}</Text>
+      <SectionHeader title={copy.taskReview.reviewSectionTitle} count={tasks.length} />
       <ActivityList
         activities={activities}
         members={members}
         onAction={handleAction}
-        pendingActivityId={pendingActivityId}
+        pendingActivityId={null}
+        decorate={(a) => ({ photoCount: photoCounts.get(a.id) })}
       />
-      {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+      <TaskReviewEvidenceModal
+        task={reviewTarget}
+        initialDecision={reviewDecision}
+        role={role}
+        onCompleted={closeReview}
+        onClose={closeReview}
+      />
     </View>
   );
 }
 
 // ── Reward redemption review section (parent flow) ────────────────────────────
-// Reviews reward_redemptions.status = 'pending' directly — a different
-// underlying record from ContributionReviewSection/TaskReviewSection above.
-// approve_reward_redemption/reject_reward_redemption remain the
-// authoritative mutation boundary; this section only calls them and
-// reflects the result. Only rendered for a privileged (owner/admin/adult)
-// viewer with at least one pending redemption (selectHasPendingRedemptionsToReview
-// already combines both conditions) — a child never sees this section at
-// all, matching "Adult Request UI Must Not Appear"'s sibling requirement
-// for review.
+// Reviews reward_redemptions.status = 'pending'. approve_reward_redemption/
+// reject_reward_redemption remain the authoritative mutation boundary. Only
+// rendered for a privileged viewer with at least one pending redemption.
 
 interface RedemptionReviewSectionProps {
-  redemptions: RewardRedemption[]; // pending only — caller filters, mirrors tasksNeedingReview
-  rewards:     Reward[];           // the full household array, including archived — never
-                                    // RewardsScreen's activeRewards filter (Decision 7:
-                                    // an archived reward's existing PENDING redemption must
-                                    // stay reviewable).
+  redemptions: RewardRedemption[]; // pending only — caller filters
+  rewards:     Reward[];           // the full household array, including archived (Decision 7)
   members:     HouseholdMember[];
   householdId: string;
   role:        string | null;
   reviewerId:  string;
 }
 
-function RedemptionReviewSection({
+export function RedemptionReviewSection({
   redemptions,
   rewards,
   members,
@@ -213,22 +187,12 @@ function RedemptionReviewSection({
 }: RedemptionReviewSectionProps) {
   const [pendingActivityId, setPendingActivityId]         = useState<string | null>(null);
   const [feedback, setFeedback]                           = useState<string | null>(null);
-  // Adult Reward Review Confirmation — the activity/action awaiting an
-  // explicit confirm, before any mutation is attempted. Separate from
-  // pendingActivityId, which continues to mean "the mutation itself is in
-  // flight" exactly as before.
+  // The activity/action awaiting an explicit confirm, before any mutation.
   const [pendingConfirmation, setPendingConfirmation]     = useState<{ activity: FamilyActivity; action: ReviewAction } | null>(null);
-  // One guard per section (not per redemption row) — matches the existing
-  // pendingActivityId convention, which already only allows one review
-  // action in flight at a time within this section.
   const confirmGuardRef = useRef(createConfirmGuard());
 
   const rewardById = useMemo(() => new Map(rewards.map((r) => [r.id, r])), [rewards]);
 
-  // Archived-reward messaging is applied here, after the pure adapter
-  // runs — mirrors how todayActivities below already post-processes
-  // TaskAdapter's output with a copy-derived override, rather than giving
-  // the adapter itself a copy/i18n dependency.
   const activities = useMemo(
     () =>
       redemptions.map((r) => {
@@ -249,11 +213,7 @@ function RedemptionReviewSection({
     setPendingConfirmation({ activity, action: action === 'approve' ? 'approve' : 'reject' });
   }
 
-  // CANCELLED — the reviewer backed out. No mutation is ever called, and
-  // the underlying redemption is left completely untouched. This is
-  // distinct from RewardRedemption.status = 'cancelled', which represents
-  // the child withdrawing their own request — this handler never reads or
-  // writes that status.
+  // The reviewer backed out — no mutation, the redemption is untouched.
   function handleCancelConfirmation() {
     setPendingConfirmation(null);
   }
@@ -271,9 +231,6 @@ function RedemptionReviewSection({
 
     setPendingConfirmation(null);
 
-    // FAILED — confirmed, mutation attempted, mutation failed. Preserves
-    // the exact existing error-reason -> copy mapping; never treated as
-    // CANCELLED.
     if (outcome.kind === 'FAILED') {
       setFeedback(
         outcome.reason === 'not_found'
@@ -288,6 +245,7 @@ function RedemptionReviewSection({
                   ? copy.rewardReview.approveError
                   : copy.rewardReview.rejectError,
       );
+      if (outcome.reason === 'not_pending' || outcome.reason === 'not_found') requestHouseholdRefresh('stale');
     }
 
     setPendingActivityId(null);
@@ -295,14 +253,14 @@ function RedemptionReviewSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.rewardReview.reviewSectionTitle}</Text>
+      <SectionHeader title={copy.rewardReview.reviewSectionTitle} count={redemptions.length} />
       <ActivityList
         activities={activities}
         members={members}
         onAction={handleAction}
         pendingActivityId={pendingActivityId}
       />
-      {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+      {feedback && <Banner tone="danger" text={feedback} />}
       <ConfirmRewardReviewModal
         visible={pendingConfirmation !== null}
         action={pendingConfirmation?.action ?? 'approve'}
@@ -320,160 +278,182 @@ interface ClaimFormProps {
   householdId:        string;
   claimedByProfileId: string;
   role:               string | null;
+  // Title of this member's own pending claim from the store, or null.
+  myPendingTitle:     string | null;
 }
 
-function ClaimContributionForm({ householdId, claimedByProfileId, role }: ClaimFormProps) {
-  const [title, setTitle]           = useState('');
-  const [isSubmitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback]     = useState<string | null>(null);
+// The backend allows ONE pending helpful claim per member
+// (uq_contribution_claims_one_pending_per_member) and offers no edit or
+// cancel for it. So while one is pending the input is replaced by that
+// claim's status AND an explicit explanation of the rule — the form never
+// just disappears.
+export function ClaimContributionForm({ householdId, claimedByProfileId, role, myPendingTitle }: ClaimFormProps) {
+  const [title, setTitle] = useState('');
+  const [phase, setPhase] = useState<ClaimFormPhase>(INITIAL_CLAIM_FORM_PHASE);
+  // Correctness barrier against a double tap landing before the disabled
+  // state re-renders; the disabled button is only the UX hint.
+  const inFlightRef = useRef(false);
+  const view = deriveClaimFormView(phase, myPendingTitle);
+  const submitEnabled = canSubmitClaim(phase, title);
+  // Large font on a narrow phone: input above a full-width button rather
+  // than a clipped placeholder (claimFormLayout.ts).
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+  const stacked = claimFormStacked(windowWidth, fontScale);
 
   async function handleSubmit() {
-    if (isSubmitting || !title.trim()) return;
-    setSubmitting(true);
-    setFeedback(null);
-
-    const result = await claimContribution({ householdId, claimedByProfileId, role, title });
-
-    if (result.ok) {
-      setTitle('');
-      setFeedback(copy.contributionClaims.claimSuccess);
-    } else if (result.reason === 'duplicate_pending') {
-      setFeedback(copy.contributionClaims.claimDuplicatePending);
-    } else {
-      setFeedback(copy.contributionClaims.claimError);
+    if (inFlightRef.current || !canSubmitClaim(phase, title)) return;
+    inFlightRef.current = true;
+    // Close the keyboard so the result below the input is actually visible.
+    Keyboard.dismiss();
+    setPhase(onClaimSubmitStarted());
+    const submittedTitle = title;
+    try {
+      const result = await claimContribution({ householdId, claimedByProfileId, role, title: submittedTitle });
+      if (result.ok) setTitle('');
+      setPhase(onClaimSubmitResult(result, submittedTitle));
+    } catch {
+      setPhase(onClaimSubmitThrew());
+    } finally {
+      inFlightRef.current = false;
     }
-    setSubmitting(false);
+  }
+
+  function handleChangeText(next: string) {
+    setTitle(next);
+    setPhase(onClaimTitleEdited);
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.contributionClaims.claimSectionTitle}</Text>
-      <View style={styles.claimRow}>
-        <TextInput
-          style={styles.claimInput}
-          value={title}
-          onChangeText={setTitle}
-          placeholder={copy.contributionClaims.claimFieldPlaceholder}
-          placeholderTextColor={colors.textMuted}
-          editable={!isSubmitting}
-          returnKeyType="send"
-          onSubmitEditing={handleSubmit}
-        />
-        <TouchableOpacity
-          style={[styles.claimSubmitButton, (isSubmitting || !title.trim()) && styles.claimSubmitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={isSubmitting || !title.trim()}
-          activeOpacity={0.8}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color={colors.surface} />
-          ) : (
-            <Text style={styles.claimSubmitText}>{copy.contributionClaims.claimSubmitButton}</Text>
+      <SectionHeader title={copy.contributionClaims.claimSectionTitle} hint={view.kind === 'form' ? copy.contributionClaims.claimSectionHint : null} />
+      {view.kind === 'form' ? (
+        <Card style={styles.claimCard}>
+          <View style={[styles.claimRow, stacked && styles.claimRowStacked]}>
+            <TextInput
+              style={[styles.claimInput, stacked && styles.claimInputStacked]}
+              value={title}
+              onChangeText={handleChangeText}
+              placeholder={copy.contributionClaims.claimFieldPlaceholder}
+              placeholderTextColor={colors.textMuted}
+              editable={!view.submitting}
+              returnKeyType="send"
+              onSubmitEditing={handleSubmit}
+              accessibilityLabel={copy.contributionClaims.claimFieldPlaceholder}
+            />
+            <Pressable
+              style={({ pressed }) => [styles.claimSubmitButton, stacked && styles.claimSubmitStacked, !submitEnabled && styles.claimSubmitButtonDisabled, pressed && submitEnabled && styles.claimSubmitPressed]}
+              onPress={handleSubmit}
+              disabled={!submitEnabled}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !submitEnabled, busy: view.submitting }}
+              accessibilityLabel={copy.contributionClaims.claimSubmitButton}
+            >
+              {view.submitting ? (
+                <ActivityIndicator size="small" color={colors.textOnColor} />
+              ) : (
+                <Text style={styles.claimSubmitText}>{copy.contributionClaims.claimSubmitButton}</Text>
+              )}
+            </Pressable>
+          </View>
+          {view.error && (
+            <Banner
+              tone="danger"
+              text={view.error === 'duplicate_pending'
+                ? copy.contributionClaims.claimDuplicatePending
+                : copy.contributionClaims.claimError}
+            />
           )}
-        </TouchableOpacity>
-      </View>
-      {feedback && <Text style={styles.claimFeedback}>{feedback}</Text>}
+        </Card>
+      ) : (
+        <View style={styles.claimStatusGroup}>
+          <Banner
+            tone={view.kind === 'sent' ? 'success' : 'warning'}
+            title={view.kind === 'sent' ? copy.contributionClaims.claimSuccess : copy.contributionClaims.pendingBadge}
+            text={view.title}
+          />
+          <Banner tone="neutral" title={copy.contributionClaims.onePendingRuleTitle} text={copy.contributionClaims.onePendingRuleBody} />
+        </View>
+      )}
     </View>
   );
 }
 
-export function TodayScreen() {
-  const tasks        = useAppStore(selectTasks);
-  const household     = useAppStore(selectCurrentHousehold);
-  const user           = useAppStore(selectCurrentUser);
-  const role            = useAppStore(selectCurrentMemberRole);
+// headerTrailing: optional navigation slot passed in by the tab shell (Slice 4).
+// The screen itself never navigates.
+export function TodayScreen({ headerTrailing }: { headerTrailing?: React.ReactNode } = {}) {
+  const refreshControl = useHouseholdRefreshControl();
+  const tasks              = useAppStore(selectTasks);
+  const household          = useAppStore(selectCurrentHousehold);
+  const user               = useAppStore(selectCurrentUser);
+  const role               = useAppStore(selectCurrentMemberRole);
   const contributionClaims = useAppStore(selectContributionClaims);
-  const hasReviewSection = useAppStore(selectHasPendingContributionClaimsToReview);
-  const canClaim          = useAppStore(selectCanClaimContribution);
-  const canApproveTaskCompletion = useAppStore(selectCanApproveTaskCompletion);
-  const rewardRedemptions        = useAppStore(selectRewardRedemptions);
-  const rewards                   = useAppStore(selectRewards);
+  const hasReviewSection   = useAppStore(selectHasPendingContributionClaimsToReview);
+  const canClaim           = useAppStore(selectCanClaimContribution);
+  const canApproveTaskCompletion   = useAppStore(selectCanApproveTaskCompletion);
+  const rewardRedemptions          = useAppStore(selectRewardRedemptions);
+  const rewards                    = useAppStore(selectRewards);
   const hasRedemptionReviewSection = useAppStore(selectHasPendingRedemptionsToReview);
+  const taskSubmissions            = useAppStore((s) => s.taskSubmissions);
   const members   = household?.members ?? [];
 
-  // Only status='pending' rows belong in the actionable review queue
-  // (APPROVED/REJECTED rows must not remain actionable). Deliberately not
-  // filtered by reward.isActive here — Decision 7: an existing PENDING
-  // redemption for a reward that is later archived must stay reviewable
-  // (reject remains available even though approve does not). rewards is
-  // the full household array from selectRewards (includes archived rows
-  // for an adult+ viewer per rewards_select_household_scoped's own RLS —
-  // never RewardsScreen's activeRewards filter, which would silently drop
-  // them from this queue). Visibility itself is Decision-11 RLS's job,
-  // already applied before this array ever reaches the store (Slice 4's
-  // hydration wiring) — no additional household filtering happens here.
+  // Memoized off the raw stable store arrays — filtering inside a Zustand
+  // selector would return a fresh array every call and loop forever
+  // (React error #185).
+  const myPendingClaimTitle = useMemo(() => {
+    if (!user) return null;
+    const mine = contributionClaims.find(
+      (c) => c.claimedByProfileId === user.id && c.status === 'pending',
+    );
+    return mine ? mine.title : null;
+  }, [contributionClaims, user]);
+
+  // Only status='pending' rows are actionable. Not filtered by
+  // reward.isActive (Decision 7: archived rewards stay reviewable).
   const pendingRedemptions = useMemo(
     () => rewardRedemptions.filter((r) => r.status === 'pending'),
     [rewardRedemptions],
   );
 
-  // selectContributionClaims returns the raw, stable store array; filtering
-  // must happen here (memoized), not inside a Zustand selector. A selector
-  // that returns a freshly-.filter()'d array on every call (as
-  // selectPendingContributionClaims used to, called directly here) never
-  // produces a referentially-stable snapshot for useSyncExternalStore to
-  // compare against — React treats every re-render as "the store changed
-  // again," re-renders, gets another new array, and never converges. This
-  // is what threw "Maximum update depth exceeded" (React error #185) on
-  // every real hydration, with no effect and no direct setState involved.
-  // A claimant must never review (approve/decline) their own claim, even
-  // when they also hold contributions.approve_claim — rewards.redeem-style
-  // permission inheritance grants contributions.claim_completed to every
-  // role, so an owner/admin/adult reviewer can genuinely also be the
-  // claimant on some other pending claim. Excluded here rather than left
-  // to ContributionReviewSection, matching how todayActivities below
-  // already filters approve/decline out for a non-privileged viewer of
-  // their own task submission — same "never present your own submission
-  // as reviewable" principle, applied to the other review surface on this
-  // screen. Also enforced at the RLS layer (authoritative boundary) — see
-  // supabase/migrations/20260821000000_contribution_claims_self_review.sql.
+  // A claimant never reviews their own claim (also enforced by RLS).
   const pendingClaims = useMemo(
     () => contributionClaims.filter((c) => c.status === 'pending' && c.claimedByProfileId !== user?.id),
     [contributionClaims, user?.id],
   );
 
-  const todayTasks    = useMemo(() => getTodayTasks(tasks), [tasks]);
-  const hasUnassigned = todayTasks.some((t) => !t.assigneeId);
-
-  // Only a privileged (owner/admin/adult) viewer may see 'approve'/'decline'
-  // on a needs_attention task here — otherwise the submitting child (or any
-  // other non-privileged viewer) would see review actions on their own or
-  // a sibling's pending submission in the general Today list. TaskAdapter
-  // itself is viewer-agnostic (see its own comment), so this filter is the
-  // minimal, adapter-signature-preserving mechanism identified during
-  // planning — the dedicated TaskReviewSection below needs no equivalent
-  // filter, since it only renders for privileged viewers in the first place.
-  const todayActivities = useMemo(
-    () => todayTasks.map(TaskAdapter.toFamilyActivity).map((activity) =>
-      canApproveTaskCompletion
-        ? activity
-        : { ...activity, availableActions: activity.availableActions.filter((a) => a !== 'approve' && a !== 'decline') },
-    ),
-    [todayTasks, canApproveTaskCompletion],
+  // One actionable item, one card: a reviewer's pending tasks live ONLY in
+  // the review section (see buildTodaySections).
+  const sections = useMemo(
+    () => buildTodaySections(tasks, { canReview: canApproveTaskCompletion }),
+    [tasks, canApproveTaskCompletion],
   );
+  const photoCounts   = useMemo(() => pendingPhotoCountByTask(taskSubmissions), [taskSubmissions]);
+  const hasUnassigned = sections.generalTasks.some((t) => !t.assigneeId);
 
-  const tasksNeedingReview = useMemo(() => getTasksNeedingAttention(tasks), [tasks]);
-  const hasTaskReviewSection = canApproveTaskCompletion && tasksNeedingReview.length > 0;
+  // Viewer-specific actions: a non-reviewer never sees approve/decline on a
+  // waiting task; the submitting child gets 'manage_completion' instead.
+  const todayActivities = useMemo(
+    () => sections.generalTasks.map(TaskAdapter.toFamilyActivity).map((activity) =>
+      applyViewerTaskActions(activity, { canApproveTaskCompletion, viewerId: user?.id ?? null, role }),
+    ),
+    [sections.generalTasks, canApproveTaskCompletion, user, role],
+  );
 
   const [pendingTaskActivityId, setPendingTaskActivityId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback]       = useState<string | null>(null);
-  // Target of the shared Task Completion V2 Modal — see the Modal's own
-  // handling comment below.
   const [completionTarget, setCompletionTarget] = useState<TaskCompletionModalTask | null>(null);
-  const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
+  const [completionNotice, setCompletionNotice] = useState<string | null>(null);
+  // The child's "waiting for review" sheet. Hosted by THIS screen, so every
+  // follow-up (cancel, change photos) keeps the child on Today.
+  const [pendingTarget, setPendingTarget] = useState<PendingCompletionModalTask | null>(null);
 
-  // 'claim' and 'complete' are wired here. The 'complete' action branches
-  // by role: privileged (owner/admin/adult) direct completion (EX-05,
-  // open -> completed, no review step) via completeTask; child completion
-  // request (EX-06, open -> needs_attention, subject to EX-07 approval)
-  // via requestTaskCompletion. Both reject a mismatched caller with
-  // 'not_authorized' and surface it via the same feedback mechanism as
-  // any other failure, not silently ignored — completeTask still defends
-  // against a child reaching it directly, and requestTaskCompletion still
-  // defends against a privileged role or wrong-assignee child reaching it,
-  // independent of this role-based routing.
+  // 'complete' branches by role: privileged direct completion (EX-05) via
+  // completeTask; a child opens the completion sheet (EX-06 via V2).
   async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
     if (pendingTaskActivityId || !household || !user) return;
+    if (action === 'manage_completion') {
+      setPendingTarget({ id: activity.id, householdId: household.id, title: activity.title });
+      return;
+    }
     if (action !== 'claim' && action !== 'complete') return;
 
     setPendingTaskActivityId(activity.id);
@@ -495,9 +475,6 @@ export function TodayScreen() {
         );
       }
     } else if (role === 'child') {
-      // Open the shared Task Completion V2 Modal. No backend call here —
-      // the Modal owns the picker, preview, replace/remove, and the
-      // actual submission via submitTaskCompletionWithEvidence.
       setCompletionTarget({
         id:          activity.id,
         householdId: household.id,
@@ -526,33 +503,44 @@ export function TodayScreen() {
     setPendingTaskActivityId(null);
   }
 
+  const nothingToShow =
+    sections.reviewTasks.length === 0 && sections.generalTasks.length === 0 &&
+    !(hasReviewSection && pendingClaims.length > 0) && !hasRedemptionReviewSection;
+
   return (
     <Screen style={styles.screen}>
       <ScreenHeader
         title={copy.screens.today.title}
         subtitle={copy.screens.today.subtitle}
+        trailing={headerTrailing}
       />
 
+      {/* "handled": with the default ('never') the first tap on a button
+          while the keyboard is up only dismisses the keyboard and the press
+          is dropped — which is how "Send for approval" appeared to do
+          nothing. */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
       >
-        {hasReviewSection && household && (
+        {sections.reviewTasks.length > 0 && household && (
+          <TaskReviewSection
+            tasks={sections.reviewTasks}
+            members={members}
+            role={role}
+            photoCounts={photoCounts}
+          />
+        )}
+
+        {hasReviewSection && household && pendingClaims.length > 0 && (
           <ContributionReviewSection
             claims={pendingClaims}
             members={members}
             householdId={household.id}
             role={role}
             reviewerId={user?.id ?? ''}
-          />
-        )}
-
-        {hasTaskReviewSection && household && (
-          <TaskReviewSection
-            tasks={tasksNeedingReview}
-            members={members}
-            householdId={household.id}
-            role={role}
           />
         )}
 
@@ -567,26 +555,28 @@ export function TodayScreen() {
           />
         )}
 
-        {todayTasks.length === 0 ? (
-          <EmptyState message={copy.emptyStates.today} emoji="🌿" />
-        ) : (
-          <>
-            <Text style={styles.summary}>{copy.today.summary}</Text>
-
+        {sections.generalTasks.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader title={copy.today.tasksSectionTitle} count={sections.generalTasks.length} hint={copy.today.summary} />
             {hasUnassigned && (
-              <View style={styles.banner}>
-                <Text style={styles.bannerText}>{copy.today.unassignedBanner}</Text>
+              <View style={styles.bannerGap}>
+                <Banner tone="primary" text={copy.today.unassignedBanner} />
               </View>
             )}
-
             <ActivityList
               activities={todayActivities}
               members={members}
               onAction={handleTaskAction}
               pendingActivityId={pendingTaskActivityId}
             />
-            {taskActionFeedback && <Text style={styles.claimFeedback}>{taskActionFeedback}</Text>}
-          </>
+            {taskActionFeedback && <Banner tone="danger" text={taskActionFeedback} />}
+          </View>
+        )}
+
+        {nothingToShow && (
+          <View style={styles.empty}>
+            <EmptyState message={copy.emptyStates.today} emoji="🌿" />
+          </View>
         )}
 
         {canClaim && household && user && (
@@ -594,17 +584,40 @@ export function TodayScreen() {
             householdId={household.id}
             claimedByProfileId={user.id}
             role={role}
+            myPendingTitle={myPendingClaimTitle}
           />
         )}
       </ScrollView>
 
+      <PendingCompletionModal
+        task={pendingTarget}
+        role={role}
+        onReopenForPhoto={(task) => {
+          // Withdrawn on the server; the task is open. The completion
+          // Modal starts a NEW logical attempt (fresh ids at selection).
+          setPendingTarget(null);
+          setCompletionNotice(copy.completionSheet.resendNotice);
+          setCompletionTarget(task);
+        }}
+        onClose={() => setPendingTarget(null)}
+      />
+
       <TaskCompletionModal
         task={completionTarget}
-        onCompleted={() => {
+        notice={completionNotice}
+        onCompleted={(submission) => {
+          if (submission) appSounds.play('completion_submitted', submission.id);
           setCompletionTarget(null);
-          requestAppDataHydrationRetry();
+          setCompletionNotice(null);
+          // Background refresh: the card moves to "Waiting for review" in
+          // place. Never a re-hydration (that showed the global loading
+          // screen and dropped the child back on Today's first tab state).
+          requestHouseholdRefresh('mutation');
         }}
-        onClose={() => setCompletionTarget(null)}
+        onClose={() => {
+          setCompletionTarget(null);
+          setCompletionNotice(null);
+        }}
       />
     </Screen>
   );
@@ -618,63 +631,63 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom:     spacing.xxxl,
   },
-  summary: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    marginBottom: spacing.lg,
-  },
-  banner: {
-    backgroundColor: colors.primarySoft,
-    borderRadius:    12,
-    padding:         spacing.md,
-    marginBottom:    spacing.lg,
-  },
-  bannerText: {
-    ...typography.caption,
-    color: colors.primary,
-  },
   section: {
     marginBottom: spacing.xl,
   },
-  sectionTitle: {
-    ...typography.body,
-    color:        colors.textPrimary,
-    fontWeight:   '600',
+  bannerGap: {
     marginBottom: spacing.md,
+  },
+  empty: {
+    minHeight: 220,
+  },
+  claimCard: {
+    gap: spacing.md,
   },
   claimRow: {
     flexDirection: 'row',
     gap:           spacing.sm,
   },
   claimInput: {
-    ...typography.body,
-    flex:              1,
-    color:             colors.textPrimary,
-    backgroundColor:   colors.surface,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    borderRadius:      radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.sm,
+    ...fieldStyles.input,
+    flex: 1,
+    // Lets the input shrink on narrow phones (360dp) so the send button
+    // stays inside the card. Without it, web gives inputs an intrinsic
+    // minimum width.
+    minWidth: 0,
+  },
+  // Stacked (large font, narrow phone): full-width input, then button.
+  claimRowStacked: {
+    flexDirection: 'column',
+    alignItems:    'stretch',
+  },
+  claimInputStacked: {
+    flex: 0,
+  },
+  claimSubmitStacked: {
+    maxWidth:        '100%',
+    paddingVertical: spacing.sm,
   },
   claimSubmitButton: {
+    minHeight:         sizes.tapTarget,
     backgroundColor:   colors.primary,
     borderRadius:      radius.md,
     paddingHorizontal: spacing.md,
     alignItems:        'center',
     justifyContent:    'center',
+    maxWidth:          140,
+  },
+  claimSubmitPressed: {
+    backgroundColor: colors.primaryPressed,
   },
   claimSubmitButtonDisabled: {
     opacity: 0.5,
   },
   claimSubmitText: {
-    ...typography.caption,
-    color:      colors.surface,
-    fontWeight: '600',
+    ...typography.label,
+    color:     colors.textOnColor,
+    textAlign: 'center',
   },
-  claimFeedback: {
-    ...typography.caption,
-    color:     colors.textMuted,
-    marginTop: spacing.sm,
+  claimStatusGroup: {
+    gap: spacing.sm,
   },
 });

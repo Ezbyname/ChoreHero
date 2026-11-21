@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { FamilyAvatar } from '@/components/FamilyAvatar';
+import { AppButton } from '@/components/ui/AppButton';
+import { Card } from '@/components/ui/Card';
+import { StatusPill, type StatusTone } from '@/components/ui/StatusPill';
 import { copy } from '@/content/copy';
+import { formatCopy } from '@/content/formatCopy';
 import { formatDueDate } from '@/domain/dateFormat';
-import { colors, radius, shadows, spacing, typography } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 
 const DESCRIPTION_MAX_LINES = 2; // P2-D07
@@ -42,7 +46,7 @@ function DescriptionBlock({ description }: { description: string }) {
         {description}
       </Text>
       {isOverflowing && (
-        <TouchableOpacity onPress={() => setIsExpanded((v) => !v)} activeOpacity={0.7}>
+        <TouchableOpacity onPress={() => setIsExpanded((v) => !v)} activeOpacity={0.7} hitSlop={8}>
           <Text style={styles.showMoreText}>
             {isExpanded ? copy.taskCard.showLess : copy.taskCard.showMore}
           </Text>
@@ -57,6 +61,17 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   complete: copy.activityCard.completeAction,
   approve:  copy.contributionClaims.approveButton,
   decline:  copy.contributionClaims.rejectButton,
+  manage_completion: copy.activityCard.manageCompletionAction,
+};
+
+// Screen-supplied extras that are not part of the activity itself.
+export type ActivityCardDecorations = {
+  // Explicit status for this card (e.g. Assigned). Overrides the default
+  // kind / needs-attention pill.
+  status?:     { label: string; tone: StatusTone };
+  // Evidence photo count of a pending completion (reviewer cards). From
+  // submission metadata only — no image bytes are loaded for it.
+  photoCount?: number;
 };
 
 interface ActivityCardProps {
@@ -64,14 +79,18 @@ interface ActivityCardProps {
   personName?:         string;
   personAvatarUrl?:    string;
   personAvatarEmoji?:  string;
-  // True only for an unassigned task — drives the same muted/italic,
-  // no-avatar treatment TaskCard used to render for that one case.
+  // True only for an unassigned task — muted/italic, no avatar.
   isPersonUnassigned?: boolean;
-  // Actions only render when a handler is supplied — a kind whose
-  // availableActions aren't wired up yet (e.g. tasks, pre-completion-feature)
-  // simply shows no buttons instead of a dead one.
+  // Actions only render when a handler is supplied.
   onAction?:           (action: ActivityAction) => void;
   isActionPending?:    boolean;
+  decorations?:        ActivityCardDecorations;
+}
+
+function photoCountLabel(count: number): string {
+  return count === 0 ? copy.taskCard.noPhotoA11y
+    : count === 1 ? copy.taskCard.photoCountOneA11y
+    : formatCopy(copy.taskCard.photoCountA11y, { n: count });
 }
 
 export function ActivityCard({
@@ -82,35 +101,45 @@ export function ActivityCard({
   isPersonUnassigned,
   onAction,
   isActionPending,
+  decorations,
 }: ActivityCardProps) {
   const isNeedsAttention = activity.status === 'needs_attention';
-  const showKindBadge    = activity.kind !== 'task' || isNeedsAttention;
-  const badgeText        = isNeedsAttention ? copy.taskCard.needsAttention : copy.activityKinds[activity.kind];
   const actions          = onAction ? activity.availableActions : [];
+
+  const status = decorations?.status
+    ?? (isNeedsAttention
+      ? { label: copy.taskCard.waitingForReview, tone: 'warning' as const }
+      : activity.kind !== 'task'
+        ? { label: copy.activityKinds[activity.kind], tone: 'primary' as const }
+        : null);
 
   // P2-D06: computed at render time so relative labels ("Today"/"Tomorrow")
   // stay correct as time passes without needing a subscription.
   const dueDateInfo = activity.dueAt != null
     ? formatDueDate(activity.dueAt, activity.dueAtHasTime)
     : null;
+  const photoCount = decorations?.photoCount;
 
   return (
-    <View style={[styles.card, isNeedsAttention && styles.cardAttention]}>
-      {showKindBadge && (
-        <View style={[styles.badge, isNeedsAttention && styles.badgeAttention]}>
-          <Text style={[styles.badgeText, isNeedsAttention && styles.badgeTextAttention]}>
-            {badgeText}
-          </Text>
+    <Card accent={isNeedsAttention ? 'warning' : 'none'} style={styles.card}>
+      {(status || photoCount !== undefined) && (
+        <View style={styles.topRow}>
+          {status ? <StatusPill label={status.label} tone={status.tone} /> : <View />}
+          {photoCount !== undefined && (
+            <StatusPill
+              label={photoCount === 0 ? copy.taskCard.noPhotoA11y : `📷 ${photoCount}`}
+              tone={photoCount === 0 ? 'neutral' : 'info'}
+              accessibilityLabel={photoCountLabel(photoCount)}
+            />
+          )}
         </View>
       )}
 
       <Text style={styles.title} numberOfLines={2}>{activity.title}</Text>
 
       {activity.description != null && activity.description !== '' && (
-        // key={activity.description}: guarantees a fresh isExpanded/
-        // isOverflowing state if this same card instance ever renders a
-        // different description (defensive; in practice ActivityList's
-        // key={activity.id} already remounts the whole card per task).
+        // key={activity.description}: fresh expand state if this same card
+        // instance ever renders a different description.
         <DescriptionBlock key={activity.description} description={activity.description} />
       )}
 
@@ -128,89 +157,56 @@ export function ActivityCard({
                 name={personName}
                 avatarUrl={personAvatarUrl}
                 avatarEmoji={personAvatarEmoji}
-                size={20}
+                size={24}
               />
             )}
-            <Text style={[styles.person, isPersonUnassigned && styles.personUnassigned]}>
+            <Text style={[styles.person, isPersonUnassigned && styles.personUnassigned]} numberOfLines={1}>
               {personName}
             </Text>
           </View>
         )}
 
         {activity.points != null && activity.points > 0 && (
-          <Text style={styles.points}>{activity.points} {copy.taskCard.points}</Text>
+          <Text style={styles.points}>⭐ {activity.points} {copy.taskCard.points}</Text>
         )}
       </View>
 
       {actions.length > 0 && (
         <View style={styles.actions}>
-          {actions.map((action) => {
-            const isSecondary = action === 'decline';
-            return (
-              <TouchableOpacity
-                key={action}
-                style={[styles.actionButton, isSecondary ? styles.actionButtonSecondary : styles.actionButtonPrimary]}
-                onPress={() => onAction?.(action)}
-                disabled={isActionPending}
-                activeOpacity={0.8}
-              >
-                {isActionPending ? (
-                  <ActivityIndicator size="small" color={isSecondary ? colors.textSecondary : colors.surface} />
-                ) : (
-                  <Text style={[styles.actionButtonText, isSecondary ? styles.actionButtonTextSecondary : styles.actionButtonTextPrimary]}>
-                    {ACTION_LABELS[action]}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {actions.map((action) => (
+            <AppButton
+              key={action}
+              label={ACTION_LABELS[action]}
+              variant={action === 'decline' ? 'secondary' : 'primary'}
+              compact
+              busy={isActionPending}
+              onPress={() => onAction?.(action)}
+              style={styles.action}
+            />
+          ))}
         </View>
       )}
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderRadius:    radius.lg,
-    borderWidth:     1,
-    borderColor:     colors.borderSoft,
-    padding:         spacing.lg,
-    marginBottom:    spacing.md,
-    ...shadows.card,
+    marginBottom: spacing.md,
+    gap:          spacing.sm,
   },
-  cardAttention: {
-    borderColor:     colors.warning,
-    backgroundColor: colors.warningSoft,
-  },
-  badge: {
-    alignSelf:         'flex-start',
-    backgroundColor:   colors.primarySoft,
-    borderRadius:      radius.pill,
-    paddingVertical:   2,
-    paddingHorizontal: spacing.sm,
-    marginBottom:      spacing.sm,
-  },
-  badgeAttention: {
-    backgroundColor: colors.warning,
-  },
-  badgeText: {
-    ...typography.caption,
-    color:      colors.primary,
-    fontWeight: '600',
-  },
-  badgeTextAttention: {
-    color: colors.surface,
+  topRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+    gap:            spacing.sm,
   },
   title: {
-    ...typography.body,
-    color:        colors.textPrimary,
-    fontWeight:   '500',
-    marginBottom: spacing.sm,
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
   },
   descriptionBlock: {
-    marginBottom: spacing.sm,
+    gap: 2,
   },
   description: {
     ...typography.caption,
@@ -225,25 +221,24 @@ const styles = StyleSheet.create({
     opacity:  0,
   },
   showMoreText: {
-    ...typography.caption,
-    color:      colors.primary,
-    fontWeight: '600',
-    marginTop:  2,
+    ...typography.label,
+    color:     colors.primary,
+    marginTop: 2,
   },
   dueDate: {
     ...typography.caption,
-    color:        colors.textMuted,
-    marginBottom: spacing.sm,
+    color: colors.textSecondary,
   },
   meta: {
     flexDirection:  'row',
     justifyContent: 'space-between',
     alignItems:     'center',
+    gap:            spacing.sm,
   },
   personRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           spacing.xs,
+    gap:           spacing.sm,
     flex:          1,
   },
   person: {
@@ -256,39 +251,15 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   points: {
-    ...typography.caption,
-    color:      colors.primary,
-    fontWeight: '600',
-    marginLeft: spacing.sm,
+    ...typography.label,
+    color: colors.primary,
   },
   actions: {
     flexDirection: 'row',
     gap:           spacing.sm,
-    marginTop:     spacing.md,
+    marginTop:     spacing.xs,
   },
-  actionButton: {
-    flex:            1,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-    justifyContent:  'center',
-  },
-  actionButtonSecondary: {
-    backgroundColor: colors.background,
-    borderWidth:     1,
-    borderColor:     colors.borderSoft,
-  },
-  actionButtonPrimary: {
-    backgroundColor: colors.primary,
-  },
-  actionButtonText: {
-    ...typography.caption,
-    fontWeight: '600',
-  },
-  actionButtonTextSecondary: {
-    color: colors.textSecondary,
-  },
-  actionButtonTextPrimary: {
-    color: colors.surface,
+  action: {
+    flex: 1,
   },
 });

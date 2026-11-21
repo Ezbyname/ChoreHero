@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { mockSeed } from '@/mock';
-import type { AppUser, ContributionClaim, Household, HouseholdMember, PointsBalance, Reward, RewardRedemption, Task, UserRole } from '@/types';
+import type { AppUser, ContributionClaim, Household, HouseholdMember, PointsBalance, Reward, RewardRedemption, Task, TaskSubmissionSummary, UserRole } from '@/types';
+import type { TaskSubmissionSummaryRow } from '@/lib/repositories/taskCompletionV2';
 import type { AppHydrationState, HydrationContext } from '@/types/hydration';
 import type { HouseholdMemberRole, TaskRow, RewardRow, PointsBalanceRow, ContributionClaimRow, RewardRedemptionRow } from '@/types/supabase';
 import {
@@ -31,6 +32,7 @@ export interface AppState {
   pointsBalances:      PointsBalance[];
   contributionClaims:  ContributionClaim[];
   rewardRedemptions:   RewardRedemption[];
+  taskSubmissions:     TaskSubmissionSummary[];
   isMockHydrated:      boolean;
 
   // ── Supabase auth identity (managed exclusively by AuthBootstrap) ─────────
@@ -87,6 +89,14 @@ interface AppActions {
   // rejectRewardRedemption to refresh the redemptions slice after a
   // single mutation, without a full re-hydration.
   setRewardRedemptionRows: (rows: RewardRedemptionRow[]) => void;
+  setTaskSubmissionRows:   (rows: TaskSubmissionSummaryRow[]) => void;
+  // Background refresh (Realtime / focus / resume / post-mutation). Replaces
+  // the household's domain lists in ONE set() and never touches hydration
+  // state, so the navigator stays mounted and no loading screen appears.
+  // Dropped (returns false) unless householdId is still the active,
+  // ready household — a late result after sign-out or a household switch
+  // can never land.
+  applyHouseholdRefresh: (input: HouseholdRefreshSnapshot) => boolean;
   hydrateFromMockSeed:   () => void;
   resetAppState:         () => void;
 
@@ -122,6 +132,17 @@ interface AppActions {
 
 export type AppStore = AppState & AppActions;
 
+export interface HouseholdRefreshSnapshot {
+  householdId:        string;
+  tasks:              TaskRow[];
+  rewards:            RewardRow[];
+  pointsBalances:     PointsBalanceRow[];
+  contributionClaims: ContributionClaimRow[];
+  rewardRedemptions:  RewardRedemptionRow[];
+  // null = the metadata fetch failed; keep what the store already has.
+  taskSubmissions:    TaskSubmissionSummaryRow[] | null;
+}
+
 // ============================================================
 // INITIAL STATE
 // ============================================================
@@ -134,6 +155,7 @@ const initialState: AppState = {
   pointsBalances:      [],
   contributionClaims:  [],
   rewardRedemptions:   [],
+  taskSubmissions:     [],
   isMockHydrated:      false,
 
   authSession:      null,
@@ -187,7 +209,7 @@ function mapHouseholdMembers(
   });
 }
 
-function mapTaskRow(t: TaskRow): Task {
+export function mapTaskRow(t: TaskRow): Task {
   return {
     id:          t.id,
     title:       t.title,
@@ -199,11 +221,13 @@ function mapTaskRow(t: TaskRow): Task {
     dueAtHasTime: t.due_at_has_time ?? undefined,
     status:      t.status as Task['status'],
     points:      t.points,
+    createdAt:   t.created_at ?? undefined,
+    completedAt: t.completed_at ?? undefined,
     // priority: not in DB schema; omitted (field is optional)
   };
 }
 
-function mapRewardRow(r: RewardRow): Reward {
+export function mapRewardRow(r: RewardRow): Reward {
   return {
     id:             r.id,
     householdId:    r.household_id,
@@ -236,6 +260,18 @@ function mapContributionClaimRow(c: ContributionClaimRow): ContributionClaim {
     reviewedAt:          c.reviewed_at ?? undefined,
     note:                c.note ?? undefined,
     createdAt:           c.created_at,
+  };
+}
+
+function mapTaskSubmissionRow(r: TaskSubmissionSummaryRow): TaskSubmissionSummary {
+  return {
+    id:                   r.id,
+    taskId:               r.task_id,
+    status:               r.status,
+    submittedByProfileId: r.submitted_by_profile_id,
+    submittedAt:          r.submitted_at,
+    reviewedAt:           r.reviewed_at ?? undefined,
+    photoCount:           r.photo_count,
   };
 }
 
@@ -289,6 +325,27 @@ export const useAppStore = create<AppStore>((rawSet) => {
   setRewardRedemptions:     (redemptions) => set({ rewardRedemptions: redemptions }),
   setRewardRedemptionRows:  (rows)   =>
     set({ rewardRedemptions: rows.map(mapRewardRedemptionRow) }),
+  setTaskSubmissionRows:    (rows)   =>
+    set({ taskSubmissions: rows.map(mapTaskSubmissionRow) }),
+
+  applyHouseholdRefresh: (input) => {
+    let applied = false;
+    set((state) => {
+      if (state.activeHouseholdId !== input.householdId || !state.isAppDataReady) return state;
+      applied = true;
+      return {
+        tasks:              input.tasks.map(mapTaskRow),
+        rewards:            input.rewards.map(mapRewardRow),
+        pointsBalances:     input.pointsBalances.map(mapPointsBalanceRow),
+        contributionClaims: input.contributionClaims.map(mapContributionClaimRow),
+        rewardRedemptions:  input.rewardRedemptions.map(mapRewardRedemptionRow),
+        taskSubmissions:    input.taskSubmissions
+          ? input.taskSubmissions.map(mapTaskSubmissionRow)
+          : state.taskSubmissions,
+      };
+    });
+    return applied;
+  },
 
   hydrateFromMockSeed: () =>
     set((state) => {
@@ -433,6 +490,7 @@ export const useAppStore = create<AppStore>((rawSet) => {
         pointsBalances:      context.pointsBalances.map(mapPointsBalanceRow),
         contributionClaims:  context.contributionClaims.map(mapContributionClaimRow),
         rewardRedemptions:   context.rewardRedemptions.map(mapRewardRedemptionRow),
+        taskSubmissions:     (context.taskSubmissions ?? []).map(mapTaskSubmissionRow),
 
         activeHouseholdId:     context.activeHouseholdId,
         hasNoHousehold:        context.hasNoHousehold,
@@ -457,6 +515,7 @@ export const useAppStore = create<AppStore>((rawSet) => {
       pointsBalances:     [],
       contributionClaims: [],
       rewardRedemptions:  [],
+      taskSubmissions:    [],
 
       activeHouseholdId:     null,
       hasNoHousehold:        false,

@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingView } from '@/components/ui/LoadingView';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { HouseholdSetupScreen } from '@/screens/HouseholdSetupScreen';
 import { ProfileSetupScreen } from '@/screens/ProfileSetupScreen';
@@ -10,7 +11,6 @@ import {
   selectNeedsProfileSetup,
 } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
-import { colors, spacing, typography } from '@/theme';
 import { copy } from '@/content/copy';
 
 /**
@@ -18,7 +18,11 @@ import { copy } from '@/content/copy';
  * AuthGate delegates here for all authenticated Supabase users.
  *
  * Branch order:
- *   1. loading                      → calm loading screen
+ *   1. loading                      → calm spinner (at cold start the
+ *                                     StartupSplash overlay covers it; it is
+ *                                     never used for uploads / submissions —
+ *                                     those refresh in the background, see
+ *                                     features/sync/householdRefresh.ts)
  *   2. error + missing_profile      → ProfileSetupScreen (recovery UX)
  *   3. error (generic load failure) → friendly error placeholder
  *   4. partial (no household)       → HouseholdSetupScreen (recovery UX)
@@ -33,14 +37,11 @@ export function AuthenticatedAppGate() {
   const isAppDataLoading  = useAppStore(selectIsAppDataLoading);
   const appDataError      = useAppStore(selectAppDataError);
   const needsProfileSetup = useAppStore(selectNeedsProfileSetup);
+  const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
 
   // 1. Loading
   if (isAppDataLoading || appHydrationState === 'loading') {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.loadingText}>Getting your ChoreHero ready…</Text>
-      </View>
-    );
+    return <LoadingView message={copy.startup.loading} />;
   }
 
   // 2. Missing profile → recovery UX (not a generic error)
@@ -48,14 +49,15 @@ export function AuthenticatedAppGate() {
     return <ProfileSetupScreen />;
   }
 
-  // 3. Generic hydration error
+  // 3. Generic hydration error — with an explicit, user-initiated retry
+  // (previously a dead end until the app was restarted). Never automatic:
+  // 'error' stays terminal for AppDataBootstrap (see its own comment).
   if (appHydrationState === 'error') {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>
-          {appDataError ?? copy.errors.generic}
-        </Text>
-      </View>
+      <ErrorState
+        message={appDataError ?? copy.errors.generic}
+        onRetry={requestAppDataHydrationRetry}
+      />
     );
   }
 
@@ -67,23 +69,3 @@ export function AuthenticatedAppGate() {
   // 5. Fully hydrated
   return <RootNavigator />;
 }
-
-const styles = StyleSheet.create({
-  center: {
-    flex:              1,
-    alignItems:        'center',
-    justifyContent:    'center',
-    backgroundColor:   colors.background,
-    paddingHorizontal: spacing.xl,
-  },
-  loadingText: {
-    ...typography.body,
-    color:     colors.textMuted,
-    textAlign: 'center',
-  },
-  errorText: {
-    ...typography.body,
-    color:     colors.textSecondary,
-    textAlign: 'center',
-  },
-});

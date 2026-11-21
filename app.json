@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "backgroundColor": "#26520A",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,6 +22,16 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#26520A",
+          "image": "./assets/native-splash-blank.png",
+          "imageWidth": 100
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "89d38a6a-8b4f-4d0f-9385-9cb92cc5f465"

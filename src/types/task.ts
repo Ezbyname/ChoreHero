@@ -29,13 +29,19 @@ export interface Task {
   priority?:    TaskPriority; // optional: not stored in DB
   status:       TaskStatus;
   points?:      number;
+  // tasks.created_at — newest-first ordering on Assigned.
+  createdAt?:   string;
+  // tasks.completed_at — read-only mapping of the existing DB column.
+  // Informational only: D1 Daily Progress counts by status, not by when
+  // the task was completed.
+  completedAt?: string;
 }
 
 // Task Completion Photo Proof — Slice 1 (schema only; no RPC/mutation path
 // exists yet). One row per completion attempt, not per task — tasks.status
 // remains the workflow authority. See
 // supabase/migrations/20260906000000_task_completion_submissions_schema.sql.
-export type TaskCompletionSubmissionStatus = 'pending' | 'approved' | 'rejected';
+export type TaskCompletionSubmissionStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
 export interface TaskCompletionSubmission {
   id:                    string;
@@ -50,4 +56,18 @@ export interface TaskCompletionSubmission {
   submittedAt:           string;
   createdAt:             string;
   updatedAt:             string;
+}
+
+// Metadata-only projection of a submission for list screens (reviewer
+// photo-count badge, Assigned status). Deliberately has no storage path:
+// evidence is only ever read through the task-completion-evidence Edge
+// Function by submission id.
+export interface TaskSubmissionSummary {
+  id:                   string;
+  taskId:               string;
+  status:               TaskCompletionSubmissionStatus;
+  submittedByProfileId: string;
+  submittedAt:          string;
+  reviewedAt?:          string;
+  photoCount:           number;
 }

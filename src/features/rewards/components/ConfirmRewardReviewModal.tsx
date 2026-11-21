@@ -1,7 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { copy } from '@/content/copy';
-import { colors, radius, spacing, typography } from '@/theme';
 import type { ReviewAction } from '@/features/rewards/rewardReviewConfirmationUx';
 
 // Adult Reward Review Confirmation. One generic modal for both actions
@@ -37,85 +36,14 @@ export function ConfirmRewardReviewModal({
   const confirmCta = isReject ? copy.rewardReviewConfirm.rejectCta : copy.rewardReviewConfirm.approveCta;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.body}>{body}</Text>
-
-          <TouchableOpacity
-            style={[styles.confirmButton, isReject && styles.confirmButtonReject]}
-            onPress={onConfirm}
-            disabled={isSubmitting}
-            activeOpacity={0.8}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={colors.surface} />
-            ) : (
-              <Text style={styles.confirmButtonText}>{confirmCta}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={onCancel}
-            disabled={isSubmitting}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.cancelButtonText}>{copy.rewardReviewConfirm.cancelCta}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmDialog
+      visible={visible}
+      title={title}
+      body={body}
+      primary={{ label: confirmCta, onPress: onConfirm, variant: isReject ? 'danger' : 'primary' }}
+      secondary={{ label: copy.rewardReviewConfirm.cancelCta, onPress: onCancel }}
+      onDismiss={onCancel}
+      busy={isSubmitting}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  backdrop: {
-    flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems:      'center',
-    justifyContent:  'center',
-    padding:         spacing.xl,
-  },
-  card: {
-    width:           '100%',
-    maxWidth:        360,
-    backgroundColor: colors.surface,
-    borderRadius:    radius.lg,
-    padding:         spacing.xl,
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  body: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    marginBottom: spacing.lg,
-  },
-  confirmButton: {
-    backgroundColor: colors.primary,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginBottom:    spacing.sm,
-  },
-  confirmButtonReject: {
-    backgroundColor: colors.warning,
-  },
-  confirmButtonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-  },
-  cancelButtonText: {
-    ...typography.body,
-    color: colors.textMuted,
-  },
-});

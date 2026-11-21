@@ -27,7 +27,11 @@ export type ActivityStatus =
 // 'complete' has no wired mutation yet either (see TaskAdapter) — it stays
 // in the union because the shape is correct, but no screen supplies an
 // onAction handler for it, so ActivityCard renders no button for it today.
-export type ActivityAction = 'claim' | 'complete' | 'approve' | 'decline';
+// 'manage_completion' is the submitting child's own action on their
+// waiting-for-review task (Add/Change photo, Cancel completion). It is
+// never produced by an adapter — only applyViewerTaskActions adds it,
+// because it depends on who is looking.
+export type ActivityAction = 'claim' | 'complete' | 'approve' | 'decline' | 'manage_completion';
 
 // createdByProfileId / targetProfileId are raw ids, not embedded user
 // objects — display-name/avatar resolution stays a render-time concern via

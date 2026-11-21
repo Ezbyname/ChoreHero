@@ -7,6 +7,10 @@ import { colors, spacing, typography } from '@/theme';
 interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
+  // Optional slots (Slice 4 navigation entry points). Omitted means the
+  // header renders exactly as before.
+  trailing?: React.ReactNode;   // right of the title, e.g. the adult Home profile entry
+  accessory?: React.ReactNode;  // under the subtitle, e.g. the adult Tasks view switch
 }
 
 // QA-01 — Runtime Build Identification, Layer A (quick identification).
@@ -28,22 +32,44 @@ function QaBadge() {
   );
 }
 
-export function ScreenHeader({ title, subtitle }: ScreenHeaderProps) {
+export function ScreenHeader({ title, subtitle, trailing, accessory }: ScreenHeaderProps) {
+  const titleBlock = (
+    <>
+      <Text style={styles.title}>{title}</Text>
+      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+    </>
+  );
   return (
     <View style={styles.container}>
       <QaBadge />
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {trailing ? (
+        <View style={styles.row}>
+          <View style={styles.flex}>{titleBlock}</View>
+          {trailing}
+        </View>
+      ) : titleBlock}
+      {accessory ? <View style={styles.accessory}>{accessory}</View> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-  paddingHorizontal: spacing.xl,
-  paddingTop:        spacing.lg,
-  paddingBottom:     spacing.md,
-},
+    paddingHorizontal: spacing.xl,
+    paddingTop:        spacing.lg,
+    paddingBottom:     spacing.lg,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.md,
+  },
+  flex: {
+    flex: 1,
+  },
+  accessory: {
+    marginTop: spacing.md,
+  },
   title: {
     ...typography.title,
     color: colors.textPrimary,
@@ -55,7 +81,7 @@ const styles = StyleSheet.create({
   },
   qaBadge: {
     alignSelf:         'flex-start',
-    backgroundColor:   '#FEF3C7',
+    backgroundColor:   colors.warningSoft,
     borderRadius:      999,
     paddingHorizontal: spacing.sm,
     paddingVertical:   2,
@@ -63,7 +89,7 @@ const styles = StyleSheet.create({
   },
   qaBadgeText: {
     ...typography.caption,
-    color:         '#92400E',
+    color:         colors.warning,
     fontWeight:    '700',
     letterSpacing: 0.3,
   },

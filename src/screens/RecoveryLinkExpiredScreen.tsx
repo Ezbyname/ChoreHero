@@ -1,8 +1,9 @@
 // src/screens/RecoveryLinkExpiredScreen.tsx
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Text } from 'react-native';
+import { AppButton } from '@/components/ui/AppButton';
+import { FormScreen } from '@/components/ui/FormScreen';
 import { copy } from '@/content/copy';
-import { colors, spacing, typography } from '@/theme';
 
 // Shown when AppBootstrap classifies this tab's URL as an auth-redirect
 // error (expired, invalid, or already-used recovery link — see
@@ -22,52 +23,10 @@ import { colors, spacing, typography } from '@/theme';
 // a new link, independent of whether a session happens to already exist.
 export function RecoveryLinkExpiredScreen({ onRequestNewLink }: { onRequestNewLink: () => void }) {
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>{copy.auth.recoveryLinkExpiredTitle}</Text>
-        <Text style={styles.body}>{copy.auth.recoveryLinkExpiredBody}</Text>
-        <TouchableOpacity style={styles.button} onPress={onRequestNewLink} activeOpacity={0.8}>
-          <Text style={styles.buttonText}>{copy.auth.forgotPasswordLink}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    <FormScreen title={copy.auth.recoveryLinkExpiredTitle} subtitle={copy.auth.recoveryLinkExpiredBody} hero={<Text style={hero}>⏳</Text>}>
+      <AppButton label={copy.auth.forgotPasswordLink} onPress={onRequestNewLink} />
+    </FormScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex:              1,
-    backgroundColor:   colors.background,
-    alignItems:        'center',
-    justifyContent:    'center',
-    paddingHorizontal: spacing.xl,
-  },
-  content: {
-    alignItems: 'center',
-    maxWidth:   320,
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    textAlign:    'center',
-    marginBottom: spacing.sm,
-  },
-  body: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    textAlign:    'center',
-    marginBottom: spacing.lg,
-  },
-  button: {
-    backgroundColor:   colors.primary,
-    borderRadius:      12,
-    paddingVertical:   spacing.md,
-    paddingHorizontal: spacing.xl,
-    alignItems:        'center',
-  },
-  buttonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-});
+const hero = { fontSize: 48 } as const;

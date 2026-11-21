@@ -1,7 +1,9 @@
 import { hasHouseholdPermission } from '@/domain/permissions';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { getTasksForHousehold, insertTask } from '@/lib/repositories';
-import { useAppStore } from '@/store/useAppStore';
+import { requestHouseholdRefresh } from '@/features/sync/householdRefresh';
+import type { RefreshReason } from '@/features/sync/refreshScheduler';
+import { mapTaskRow, useAppStore } from '@/store/useAppStore';
 
 export type CreateTaskResult =
   | { ok: true }
@@ -33,7 +35,14 @@ interface CreateTaskInput {
 // Open Task for the household to claim. Both permissions are granted
 // together today (adult+), but the RLS-mirrored check stays split so it
 // keeps meaning something if that ever changes.
-export async function createTask(input: CreateTaskInput): Promise<CreateTaskResult> {
+// Test seam only; production callers pass no deps.
+export interface CreateTaskDeps {
+  insertFn?:       typeof insertTask;
+  getTasksFn?:     typeof getTasksForHousehold;
+  requestRefresh?: (reason: RefreshReason) => unknown;
+}
+
+export async function createTask(input: CreateTaskInput, deps: CreateTaskDeps = {}): Promise<CreateTaskResult> {
   if (!hasHouseholdPermission(input.role, 'tasks.create')) {
     return { ok: false, reason: 'not_authorized' };
   }
@@ -64,13 +73,18 @@ export async function createTask(input: CreateTaskInput): Promise<CreateTaskResu
         dueAtHasTime: input.dueAt ? (input.dueAtHasTime ?? false) : undefined,
         status:       'open',
         points:       input.points ?? 0,
+        createdAt:    new Date().toISOString(),
       },
       ...tasks,
     ]);
     return { ok: true };
   }
 
-  const inserted = await insertTask({
+  const insertFn       = deps.insertFn       ?? insertTask;
+  const getTasksFn     = deps.getTasksFn     ?? getTasksForHousehold;
+  const requestRefresh = deps.requestRefresh ?? requestHouseholdRefresh;
+
+  const inserted = await insertFn({
     householdId:        input.householdId,
     title,
     description,
@@ -82,9 +96,17 @@ export async function createTask(input: CreateTaskInput): Promise<CreateTaskResu
   });
   if (inserted.error) return { ok: false, reason: 'failed' };
 
-  const refreshed = await getTasksForHousehold(input.householdId);
-  if (refreshed.error) return { ok: false, reason: 'failed' };
-
-  useAppStore.getState().setTaskRows(refreshed.data);
+  // The task EXISTS from here on. A failed follow-up read must never be
+  // reported as a failed creation — the adult would tap Create again and
+  // get a duplicate task. Show the inserted row now; a background refresh
+  // brings the list fully in line.
+  const refreshed = await getTasksFn(input.householdId);
+  const store = useAppStore.getState();
+  if (!refreshed.error) {
+    store.setTaskRows(refreshed.data);
+  } else {
+    store.setTasks([mapTaskRow(inserted.data), ...store.tasks.filter((t) => t.id !== inserted.data.id)]);
+    requestRefresh('mutation');
+  }
   return { ok: true };
 }

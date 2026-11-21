@@ -86,15 +86,46 @@ export async function ensureProfileExists(input: {
   return { data, error: null };
 }
 
+// Updates the caller's OWN profile (Settings -> Edit profile). A plain
+// UPDATE filtered to id = authUserId; profiles_update_self RLS (id =
+// auth.uid() in both USING and WITH CHECK) is the real boundary, so another
+// member's row can never be touched from here.
+export async function updateOwnProfile(input: {
+  authUserId:  string;
+  displayName: string;
+  avatarUrl:   string | null;
+  avatarEmoji: string | null;
+}): Promise<RepositoryResult<ProfileRow>> {
+  if (!supabase) return { data: null, error: notConfiguredError() };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      display_name: input.displayName,
+      avatar_url:   input.avatarUrl,
+      avatar_emoji: input.avatarEmoji,
+    })
+    .eq('id', input.authUserId)
+    .select('*')
+    .single();
+
+  if (error || !data) return { data: null, error: error ?? notConfiguredError() };
+  return { data, error: null };
+}
+
 // Uploads a picked profile photo to the 'avatars' storage bucket and
 // returns its public URL. Path is {authUserId}/{timestamp}.{ext} — the
 // leading folder segment is what avatars_insert_own_folder's RLS policy
 // checks against auth.uid(), so this must always be the uploader's own id.
 // Does not write to profiles itself — callers pass the returned URL into
 // ensureProfileExists's avatarUrl, same as the emoji picker's flow.
+// The body is raw bytes, never a Blob — React Native cannot build a Blob
+// from bytes on Android (see @/lib/readLocalFileBytes). For an ArrayBuffer
+// body storage-js sends contentType as the request's content-type header.
 export async function uploadProfileAvatarImage(input: {
-  authUserId: string;
-  blob:       Blob;
+  authUserId:    string;
+  bytes:         ArrayBuffer;
+  contentType:   string;
   fileExtension: string;
 }): Promise<RepositoryResult<string>> {
   if (!supabase) return { data: null, error: notConfiguredError() };
@@ -103,8 +134,8 @@ export async function uploadProfileAvatarImage(input: {
 
   const { error: uploadError } = await supabase.storage
     .from('avatars')
-    .upload(path, input.blob, {
-      contentType: input.blob.type || undefined,
+    .upload(path, input.bytes, {
+      contentType: input.contentType,
     });
 
   if (uploadError) return { data: null, error: storageError(uploadError.message) };

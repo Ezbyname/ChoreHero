@@ -2,16 +2,23 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { FormScreen } from '@/components/ui/FormScreen';
+import { TextField } from '@/components/ui/TextField';
 import { copy } from '@/content/copy';
 import type { AuthStackParamList } from '@/navigation/types';
+import {
+  INITIAL_SHOW_PASSWORD,
+  isPasswordMasked,
+  showPasswordAccessibilityState,
+  togglePasswordVisibility,
+} from '@/screens/auth/passwordVisibility';
 import { signInWithEmail } from '@/services/supabase/auth';
 import { colors, spacing, typography } from '@/theme';
 
@@ -36,6 +43,7 @@ export function LoginScreen() {
   const [password,     setPassword]     = useState('');
   const [localError,   setLocalError]   = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(INITIAL_SHOW_PASSWORD);
 
   async function handleSignIn() {
     if (isSubmitting) return;
@@ -65,163 +73,104 @@ export function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{copy.auth.loginTitle}</Text>
-          <Text style={styles.subtitle}>{copy.auth.loginSubtitle}</Text>
-        </View>
+    <FormScreen title={copy.auth.loginTitle} subtitle={copy.auth.loginSubtitle}>
+      <TextField
+        label={copy.auth.emailLabel}
+        value={email}
+        onChangeText={setEmail}
+        placeholder={copy.auth.emailPlaceholder}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="email"
+        editable={!isSubmitting}
+      />
 
-        <View style={styles.form}>
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>{copy.auth.emailLabel}</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={copy.auth.emailPlaceholder}
-              placeholderTextColor={colors.textMuted}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              editable={!isSubmitting}
-            />
+      <TextField
+        label={copy.auth.passwordLabel}
+        value={password}
+        onChangeText={setPassword}
+        placeholder={copy.auth.passwordPlaceholder}
+        secureTextEntry={isPasswordMasked(showPassword)}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="current-password"
+        editable={!isSubmitting}
+      >
+        <TouchableOpacity
+          style={styles.checkboxRow}
+          onPress={() => setShowPassword(togglePasswordVisibility)}
+          accessibilityRole="checkbox"
+          accessibilityState={showPasswordAccessibilityState(showPassword)}
+          accessibilityLabel={copy.auth.showPasswordLabel}
+          hitSlop={{ top: 8, bottom: 8 }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.checkbox, showPassword && styles.checkboxChecked]}>
+            {showPassword ? <Text style={styles.checkboxMark}>✓</Text> : null}
           </View>
+          <Text style={styles.checkboxLabel}>{copy.auth.showPasswordLabel}</Text>
+        </TouchableOpacity>
+      </TextField>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>{copy.auth.passwordLabel}</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder={copy.auth.passwordPlaceholder}
-              placeholderTextColor={colors.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="current-password"
-              editable={!isSubmitting}
-            />
-          </View>
+      {localError ? <Banner tone="danger" text={localError} /> : null}
 
-          {localError ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{localError}</Text>
-            </View>
-          ) : null}
+      <AppButton
+        label={copy.auth.signInButton}
+        onPress={() => { void handleSignIn(); }}
+        busy={isSubmitting}
+        busyLabel={copy.auth.signingIn}
+      />
 
-          <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
-            onPress={handleSignIn}
-            disabled={isSubmitting}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonText}>
-              {isSubmitting ? copy.auth.signingIn : copy.auth.signInButton}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkRow}
-            onPress={() => navigation.navigate('ForgotPassword')}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.linkText}>{copy.auth.forgotPasswordLink}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkRow}
-            onPress={() => navigation.navigate('Signup')}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.linkText}>{copy.auth.loginToSignup}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      <AppButton
+        label={copy.auth.forgotPasswordLink}
+        variant="ghost"
+        compact
+        onPress={() => navigation.navigate('ForgotPassword')}
+        disabled={isSubmitting}
+      />
+      <AppButton
+        label={copy.auth.loginToSignup}
+        variant="ghost"
+        compact
+        onPress={() => navigation.navigate('Signup')}
+        disabled={isSubmitting}
+      />
+    </FormScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex:            1,
-    backgroundColor: colors.background,
+  checkboxRow: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    alignSelf:       'flex-start',
+    gap:             spacing.sm,
+    minHeight:       40,
+    paddingVertical: spacing.xs,
   },
-  container: {
-    flex:              1,
-    paddingHorizontal: spacing.xl,
-    justifyContent:    'center',
+  checkbox: {
+    width:           22,
+    height:          22,
+    borderRadius:    4,
+    borderWidth:     1.5,
+    borderColor:     colors.textMuted,
+    backgroundColor: colors.surface,
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  header: {
-    marginBottom: spacing.xxxl,
-    alignItems:   'center',
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    textAlign:    'center',
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    color:     colors.textMuted,
-    textAlign: 'center',
-  },
-  form: {
-    gap: spacing.md,
-  },
-  fieldGroup: {
-    gap: spacing.xs,
-  },
-  label: {
-    ...typography.caption,
-    color:      colors.textSecondary,
-    fontWeight: '600',
-  },
-  input: {
-    ...typography.body,
-    color:             colors.textPrimary,
-    backgroundColor:   colors.surface,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    borderRadius:      10,
-    paddingHorizontal: spacing.lg,
-    paddingVertical:   spacing.md,
-  },
-  errorBox: {
-    backgroundColor: colors.errorSoft,
-    borderRadius:    8,
-    padding:         spacing.md,
-  },
-  errorText: {
-    ...typography.caption,
-    color: '#B91C1C',
-  },
-  button: {
+  checkboxChecked: {
     backgroundColor: colors.primary,
-    borderRadius:    12,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginTop:       spacing.sm,
+    borderColor:     colors.primary,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  checkboxMark: {
+    color:      colors.textOnColor,
+    fontSize:   13,
+    fontWeight: '700',
+    lineHeight: 15,
   },
-  buttonText: {
+  checkboxLabel: {
     ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  linkRow: {
-    alignItems:      'center',
-    paddingVertical: spacing.sm,
-  },
-  linkText: {
-    ...typography.caption,
-    color: colors.primary,
+    color: colors.textSecondary,
   },
 });

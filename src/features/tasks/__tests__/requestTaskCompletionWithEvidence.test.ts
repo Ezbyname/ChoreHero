@@ -22,7 +22,7 @@ import type { TaskCompletionSubmissionRow } from '@/types/supabase';
 // change to how any other feature file in this repo is tested.
 
 const task = { id: 'task-1', householdId: 'household-1' };
-const photo = { blob: new Blob(['x'], { type: 'image/png' }), mimeType: 'image/png' };
+const photo = { bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer, mimeType: 'image/png' };
 
 function photoAttempt(evidenceUploadState: 'not_uploaded' | 'confirmed' | 'uncertain' = 'not_uploaded'): AttemptStateWithPhoto {
   return { clientRequestId: 'cri-1', photoObjectId: 'photo-1', evidenceUploadState };
@@ -83,7 +83,7 @@ test('ensureEvidenceUploaded: missing MIME -> validation_error, upload fn never 
   const result = await ensureEvidenceUploaded(
     photoAttempt(),
     task,
-    { blob: new Blob(['x']), mimeType: '' },
+    { bytes: new ArrayBuffer(1), mimeType: '' },
     async () => { calls += 1; return { data: { path: 'x' }, error: null }; },
   );
   assert.equal(result.kind, 'validation_error');
@@ -97,7 +97,7 @@ test('ensureEvidenceUploaded: unsupported MIME -> validation_error, upload fn ne
   const result = await ensureEvidenceUploaded(
     photoAttempt(),
     task,
-    { blob: new Blob(['x']), mimeType: 'application/octet-stream' },
+    { bytes: new ArrayBuffer(1), mimeType: 'application/octet-stream' },
     async () => { calls += 1; return { data: { path: 'x' }, error: null }; },
   );
   assert.equal(result.kind, 'validation_error');
@@ -127,32 +127,41 @@ test('ensureEvidenceUploaded: 2xx -> confirmed, called with the exact canonical 
   assert.equal(capturedPath, 'household-1/task-1/profile-1/photo-1');
 });
 
-test('ensureEvidenceUploaded: re-wraps the blob so the uploaded blob.type always matches photo.mimeType, regardless of the input blob\'s own type', async () => {
+test('ensureEvidenceUploaded: uploads the exact materialized bytes with contentType = the picker-provided mimeType', async () => {
   withAuthenticatedCaller('profile-1');
-  const untyped = new Blob(['x'], { type: 'application/octet-stream' }); // deliberately wrong/inconsistent .type
-  let capturedBlob: Blob | undefined;
+  let captured: { bytes: ArrayBuffer; contentType: string } | undefined;
   const result = await ensureEvidenceUploaded(
     photoAttempt(),
     task,
-    { blob: untyped, mimeType: 'image/png' },
-    async (input) => { capturedBlob = input.blob; return { data: { path: input.path }, error: null }; },
+    photo,
+    async (input) => { captured = { bytes: input.bytes, contentType: input.contentType }; return { data: { path: input.path }, error: null }; },
   );
   assert.equal(result.kind, 'confirmed');
-  assert.equal(capturedBlob?.type, 'image/png');
-  assert.notEqual(capturedBlob, untyped); // a genuinely new Blob, not the caller's original passed through
+  assert.equal(captured?.bytes, photo.bytes); // same buffer, no copy/re-encode
+  assert.equal(captured?.contentType, 'image/png');
 });
 
-test('ensureEvidenceUploaded: re-wraps even when the input blob has no type at all', async () => {
+test('ensureEvidenceUploaded: never constructs a Blob (React Native rejects Blob-from-ArrayBuffer)', async () => {
   withAuthenticatedCaller('profile-1');
-  const noType = new Blob(['x']); // .type === '' by default
-  let capturedBlob: Blob | undefined;
-  await ensureEvidenceUploaded(
-    photoAttempt(),
-    task,
-    { blob: noType, mimeType: 'image/jpeg' },
-    async (input) => { capturedBlob = input.blob; return { data: { path: input.path }, error: null }; },
-  );
-  assert.equal(capturedBlob?.type, 'image/jpeg');
+  const RealBlob = globalThis.Blob;
+  let constructed = 0;
+  // Simulate RN's BlobManager.createFromParts rejection of ArrayBuffer parts.
+  globalThis.Blob = class extends RealBlob {
+    constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
+      constructed += 1;
+      if (parts?.some((p) => p instanceof ArrayBuffer || ArrayBuffer.isView(p))) {
+        throw new Error("Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported");
+      }
+      super(parts, options);
+    }
+  } as typeof Blob;
+  try {
+    const result = await ensureEvidenceUploaded(photoAttempt(), task, photo, async (input) => ({ data: { path: input.path }, error: null }));
+    assert.equal(result.kind, 'confirmed');
+    assert.equal(constructed, 0);
+  } finally {
+    globalThis.Blob = RealBlob;
+  }
 });
 
 test('ensureEvidenceUploaded: verified duplicate -> confirmed', async () => {

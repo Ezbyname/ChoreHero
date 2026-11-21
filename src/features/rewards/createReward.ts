@@ -1,7 +1,9 @@
 import { hasHouseholdPermission } from '@/domain/permissions';
 import { isSupabaseConfigured } from '@/lib/supabaseConfig';
 import { getRewardsForHousehold, insertReward } from '@/lib/repositories';
-import { useAppStore } from '@/store/useAppStore';
+import { requestHouseholdRefresh } from '@/features/sync/householdRefresh';
+import type { RefreshReason } from '@/features/sync/refreshScheduler';
+import { mapRewardRow, useAppStore } from '@/store/useAppStore';
 
 export type CreateRewardResult =
   | { ok: true }
@@ -20,7 +22,17 @@ interface CreateRewardInput {
   role:                 string | null;
 }
 
-export async function createReward(input: CreateRewardInput): Promise<CreateRewardResult> {
+// Test seam only; production callers pass no deps.
+export interface CreateRewardDeps {
+  insertFn?:       typeof insertReward;
+  getRewardsFn?:   typeof getRewardsForHousehold;
+  requestRefresh?: (reason: RefreshReason) => unknown;
+}
+
+export async function createReward(
+  input: CreateRewardInput,
+  deps:  CreateRewardDeps = {},
+): Promise<CreateRewardResult> {
   if (!hasHouseholdPermission(input.role, 'rewards.create')) {
     return { ok: false, reason: 'not_authorized' };
   }
@@ -52,18 +64,30 @@ export async function createReward(input: CreateRewardInput): Promise<CreateRewa
     return { ok: true };
   }
 
-  const inserted = await insertReward({
+  const insertFn       = deps.insertFn       ?? insertReward;
+  const getRewardsFn   = deps.getRewardsFn   ?? getRewardsForHousehold;
+  const requestRefresh = deps.requestRefresh ?? requestHouseholdRefresh;
+
+  const inserted = await insertFn({
     householdId:        input.householdId,
     title,
     description,
     requiredPoints:      input.requiredPoints,
     createdByProfileId: input.createdByProfileId,
   });
-  if (inserted.error) return { ok: false, reason: 'failed' };
+  if (inserted.error || !inserted.data) return { ok: false, reason: 'failed' };
 
-  const refreshed = await getRewardsForHousehold(input.householdId);
-  if (refreshed.error) return { ok: false, reason: 'failed' };
-
-  useAppStore.getState().setRewardRows(refreshed.data);
+  // The reward EXISTS from here on: a failed follow-up read must never be
+  // reported as a failed creation (the adult would tap Create again and get
+  // a duplicate). Show the inserted row now; a background refresh follows.
+  const refreshed = await getRewardsFn(input.householdId);
+  const store = useAppStore.getState();
+  if (!refreshed.error) {
+    store.setRewardRows(refreshed.data);
+  } else {
+    const row = inserted.data;
+    store.setRewards([mapRewardRow(row), ...store.rewards.filter((r) => r.id !== row.id)]);
+    requestRefresh('mutation');
+  }
   return { ok: true };
 }

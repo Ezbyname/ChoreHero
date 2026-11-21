@@ -7,6 +7,10 @@ export type RepositoryResult<T> =
 export type PaginationOptions = {
   limit?:  number;
   offset?: number;
+  // Best-effort cancel (the background refresh's watchdog aborts a hung
+  // request). Never required for correctness: a late result is dropped by
+  // the caller's own staleness check.
+  signal?: AbortSignal | null;
 };
 
 // Returned when the Supabase client is null (env vars not configured).

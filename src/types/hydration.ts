@@ -8,6 +8,7 @@ import type {
   ContributionClaimRow,
   RewardRedemptionRow,
 } from '@/types/supabase';
+import type { TaskSubmissionSummaryRow } from '@/lib/repositories/taskCompletionV2';
 
 // Observable states for the app data hydration pipeline.
 //
@@ -38,6 +39,9 @@ export interface HydrationContext {
   // — RLS, not this fetch, determines whether a child sees only their own
   // rows or an adult+ sees the whole household's.
   rewardRedemptions:  RewardRedemptionRow[];
+  // Submission metadata (status + photo count, never paths). Optional and
+  // non-critical: a failed fetch hydrates as [] rather than failing the run.
+  taskSubmissions?:   TaskSubmissionSummaryRow[];
   activeHouseholdId:  string | null;
   hasNoHousehold:     boolean;
 }

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   approveTaskCompletionV2,
   fetchTaskCompletionEvidence,
+  getPendingTaskCompletionSubmissionForTask,
   rejectTaskCompletionV2,
   requestTaskCompletionV2,
   uploadTaskCompletionEvidence,
@@ -51,9 +52,16 @@ test('fetchTaskCompletionEvidence returns notConfiguredError without throwing wh
 test('uploadTaskCompletionEvidence returns notConfiguredError without throwing when Supabase is not configured', async () => {
   const result = await uploadTaskCompletionEvidence({
     path: 'household-1/task-1/profile-1/photo-1',
-    blob: new Blob(),
+    bytes:       new ArrayBuffer(1),
+    contentType: 'image/jpeg',
   });
 
   assert.equal(result.data, null);
   assert.ok(result.error && 'code' in result.error && result.error.code === 'PGRST_NOT_CONFIGURED');
+});
+
+test('getPendingTaskCompletionSubmissionForTask returns notConfiguredError without throwing when Supabase is not configured', async () => {
+  const result = await getPendingTaskCompletionSubmissionForTask('task-1');
+  assert.equal(result.data, null);
+  assert.equal(result.error?.code, 'PGRST_NOT_CONFIGURED');
 });

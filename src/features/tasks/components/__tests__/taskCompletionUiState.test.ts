@@ -3,327 +3,226 @@ import test from 'node:test';
 
 import {
   INITIAL_UI_STATE,
+  MAX_EVIDENCE_PHOTOS,
+  canAddPhotos,
+  canSubmit,
   isTerminalPhase,
-  onBeginNoPhotoSubmit,
-  onBeginPhotoSubmit,
+  onBeginSubmit,
   onCameraPermissionDenied,
   onLocalPhotoReadFailed,
-  onPhotoRemoved,
-  onPhotoSelected,
+  onPhotoRemovedAt,
+  onPhotoReplacedAt,
+  onPhotosAdded,
   onPickerCancelled,
   onPickerFailed,
   onSubmitInvalidMime,
+  onSubmitProgress,
   onSubmitRetryableFailed,
   onSubmitSuccess,
   onSubmitTerminalNotAuthorized,
   onSubmitTerminalNotOpen,
   onSubmitUncertain,
   onSubmitUnexpectedFailure,
+  photoCountLabel,
+  remainingPhotoSlots,
+  type SelectedPhoto,
   type TaskCompletionUiState,
 } from '@/features/tasks/components/taskCompletionUiState';
 
-// Deterministic UUID generator for tests — each call returns a unique
-// predictable string so identity comparisons across transitions are easy
-// to read.
+// Deterministic id generator — every call returns a new predictable id so
+// identity comparisons across transitions are easy to read.
 function makeIdGen() {
   let n = 0;
   return () => `uuid-${++n}`;
 }
 
-const samplePhoto = { previewUri: 'file:///tmp/photo.png', mimeType: 'image/png' };
+const cam = (n: number): SelectedPhoto => ({ previewUri: `file:///camera-${n}.jpg`, mimeType: 'image/jpeg', source: 'camera' });
+const gal = (n: number): SelectedPhoto => ({ previewUri: `file:///gallery-${n}.png`, mimeType: 'image/png', source: 'gallery' });
 
-test('INITIAL_UI_STATE has no attempt and idle phase (opening the Modal does not mint an attempt)', () => {
-  assert.equal(INITIAL_UI_STATE.photo, null);
+function allIds(s: TaskCompletionUiState): string[] {
+  return s.attempt ? [s.attempt.clientRequestId, ...s.attempt.photos.map((p) => p.photoObjectId)] : [];
+}
+
+// ── Lazy attempt creation ───────────────────────────────────────────────────
+
+test('opening the Modal mints no attempt; picker cancel / permission denial / picker failure mint none', () => {
   assert.equal(INITIAL_UI_STATE.attempt, null);
-  assert.equal(INITIAL_UI_STATE.phase, 'idle');
-  assert.equal(INITIAL_UI_STATE.error, null);
+  assert.deepEqual(INITIAL_UI_STATE.photos, []);
+  assert.equal(onPickerCancelled(INITIAL_UI_STATE), INITIAL_UI_STATE);
+  assert.equal(onPhotosAdded(INITIAL_UI_STATE, [], makeIdGen()), INITIAL_UI_STATE);
+  assert.equal(onCameraPermissionDenied(INITIAL_UI_STATE).attempt, null);
+  assert.equal(onCameraPermissionDenied(INITIAL_UI_STATE).error?.kind, 'camera_permission_denied');
+  assert.equal(onPickerFailed(INITIAL_UI_STATE).attempt, null);
+  assert.equal(onPickerFailed(INITIAL_UI_STATE).error?.kind, 'picker_failed');
 });
 
-test('onPickerCancelled is a no-op (picker cancel never creates an attempt)', () => {
-  const next = onPickerCancelled(INITIAL_UI_STATE);
-  assert.equal(next, INITIAL_UI_STATE);
-  assert.equal(next.attempt, null);
+// ── 0 / 1 / 5 / 6th photo ───────────────────────────────────────────────────
+
+test('0 photos: Submit is available and mints a fresh no-photo attempt lazily', () => {
+  assert.equal(canSubmit(INITIAL_UI_STATE), true);
+  const working = onBeginSubmit(INITIAL_UI_STATE, makeIdGen());
+  assert.equal(working.phase, 'submitting');
+  assert.deepEqual(working.attempt, { clientRequestId: 'uuid-1', photos: [] });
+  assert.equal(canSubmit(working), false); // double tap blocked while in flight
 });
 
-test('onCameraPermissionDenied records error but does NOT mint an attempt', () => {
-  const next = onCameraPermissionDenied(INITIAL_UI_STATE);
-  assert.equal(next.attempt, null);
-  assert.equal(next.photo, null);
-  assert.deepEqual(next.error, { kind: 'camera_permission_denied' });
+test('1 photo: one fresh attempt (clientRequestId + one photoObjectId), count label 1 / 5', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], makeIdGen());
+  assert.equal(s.phase, 'ready');
+  assert.equal(s.photos.length, 1);
+  assert.deepEqual(s.attempt, { clientRequestId: 'uuid-1', photos: [{ photoObjectId: 'uuid-2', evidenceUploadState: 'not_uploaded' }] });
+  assert.equal(photoCountLabel(s), '1 / 5');
+  assert.equal(canSubmit(s), true);
 });
 
-test('onPhotoSelected creates a fresh photo-bearing attempt with new clientRequestId and photoObjectId', () => {
+test('5 photos (mixed Camera + Gallery): all accepted in order, one id per photo, no more room', () => {
   const gen = makeIdGen();
-  const next = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  assert.ok(next.attempt, 'attempt must exist after photo selection');
-  assert.equal(next.attempt!.clientRequestId, 'uuid-1');
-  assert.equal(next.attempt!.photoObjectId, 'uuid-2');
-  assert.equal(next.attempt!.evidenceUploadState, 'not_uploaded');
-  assert.equal(next.phase, 'photo_selected');
-  assert.equal(next.error, null);
-  assert.deepEqual(next.photo, samplePhoto);
+  let s = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], gen);
+  s = onPhotosAdded(s, [gal(1), gal(2)], gen);
+  s = onPhotosAdded(s, [cam(2)], gen);
+  s = onPhotosAdded(s, [gal(3)], gen);
+  assert.equal(MAX_EVIDENCE_PHOTOS, 5);
+  assert.deepEqual(s.photos.map((p) => p.source), ['camera', 'gallery', 'gallery', 'camera', 'gallery']);
+  assert.equal(s.attempt?.photos.length, 5);
+  assert.equal(new Set(allIds(s)).size, 6);
+  assert.equal(photoCountLabel(s), '5 / 5');
+  assert.equal(remainingPhotoSlots(s), 0);
+  assert.equal(canAddPhotos(s), false);
+  assert.equal(canSubmit(s), true);
 });
 
-test('onPhotoSelected again (replace) creates a NEW attempt with DIFFERENT clientRequestId AND DIFFERENT photoObjectId', () => {
+test('a 6th photo is refused with a visible error; the 5-photo selection and its attempt are untouched', () => {
   const gen = makeIdGen();
-  const first = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const second = onPhotoSelected(first, { previewUri: 'file:///tmp/other.jpg', mimeType: 'image/jpeg' }, gen);
-  assert.notEqual(second.attempt!.clientRequestId, first.attempt!.clientRequestId);
-  assert.notEqual(second.attempt!.photoObjectId, first.attempt!.photoObjectId);
-  assert.equal(second.attempt!.evidenceUploadState, 'not_uploaded');
+  const five = onPhotosAdded(INITIAL_UI_STATE, [cam(1), cam(2), gal(1), gal(2), cam(3)], gen);
+  const six  = onPhotosAdded(five, [gal(9)], gen);
+  assert.equal(six.photos.length, 5);
+  assert.equal(six.attempt, five.attempt);
+  assert.equal(six.error?.kind, 'too_many_photos');
 });
 
-test('onPhotoRemoved creates a NEW no-photo attempt (fresh clientRequestId, photoObjectId=null)', () => {
+test('a gallery multi-select larger than the room left keeps the first ones and reports the rest', () => {
   const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const removed = onPhotoRemoved(withPhoto, gen);
-  assert.equal(removed.photo, null);
-  assert.ok(removed.attempt);
-  assert.notEqual(removed.attempt!.clientRequestId, withPhoto.attempt!.clientRequestId);
-  assert.equal(removed.attempt!.photoObjectId, null);
-  assert.equal(removed.attempt!.evidenceUploadState, 'confirmed');
-  assert.equal(removed.phase, 'idle');
+  const s = onPhotosAdded(onPhotosAdded(INITIAL_UI_STATE, [cam(1), cam(2), cam(3)], gen), [gal(1), gal(2), gal(3)], gen);
+  assert.deepEqual(s.photos.map((p) => p.previewUri), ['file:///camera-1.jpg', 'file:///camera-2.jpg', 'file:///camera-3.jpg', 'file:///gallery-1.png', 'file:///gallery-2.png']);
+  assert.equal(s.error?.kind, 'too_many_photos');
+  assert.equal(s.attempt?.photos.length, 5);
 });
 
-test('onBeginNoPhotoSubmit mints a fresh no-photo attempt when none exists', () => {
+// ── Changing the set is always a NEW logical attempt ────────────────────────
+
+test('adding, replacing or removing a photo mints NEW ids for the whole set (never reuses old ones)', () => {
   const gen = makeIdGen();
-  const next = onBeginNoPhotoSubmit(INITIAL_UI_STATE, gen);
-  assert.ok(next.attempt);
-  assert.equal(next.attempt!.clientRequestId, 'uuid-1');
-  assert.equal(next.attempt!.photoObjectId, null);
-  assert.equal(next.attempt!.evidenceUploadState, 'confirmed');
-  assert.equal(next.phase, 'submitting');
+  const one     = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], gen);
+  const two     = onPhotosAdded(one, [gal(1)], gen);
+  const replace = onPhotoReplacedAt(two, 0, cam(7), gen);
+  const removed = onPhotoRemovedAt(replace, 1, gen);
+  const seen = new Set<string>();
+  for (const s of [one, two, replace, removed]) for (const id of allIds(s)) {
+    assert.ok(!seen.has(id), `id ${id} reused`);
+    seen.add(id);
+  }
+  assert.deepEqual(replace.photos.map((p) => p.previewUri), ['file:///camera-7.jpg', 'file:///gallery-1.png']);
+  assert.deepEqual(removed.photos.map((p) => p.previewUri), ['file:///camera-7.jpg']);
 });
 
-test('onBeginNoPhotoSubmit reuses an existing no-photo attempt (idempotent for retry identity)', () => {
+test('removing the last photo leaves a fresh no-photo attempt (old single-photo Remove semantics)', () => {
   const gen = makeIdGen();
-  const withNoPhotoAttempt = onPhotoRemoved(
-    onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen),
-    gen,
-  );
-  const existing = withNoPhotoAttempt.attempt!;
-  const begun = onBeginNoPhotoSubmit(withNoPhotoAttempt, gen);
-  assert.equal(begun.attempt!.clientRequestId, existing.clientRequestId);
-  assert.equal(begun.attempt!.photoObjectId, null);
-  assert.equal(begun.phase, 'submitting');
+  const s = onPhotoRemovedAt(onPhotosAdded(INITIAL_UI_STATE, [cam(1)], gen), 0, gen);
+  assert.deepEqual(s.photos, []);
+  assert.equal(s.phase, 'idle');
+  assert.equal(s.attempt?.photos.length, 0);
+  assert.notEqual(s.attempt?.clientRequestId, 'uuid-1');
+  // Submit reuses that no-photo attempt rather than minting another.
+  assert.equal(onBeginSubmit(s, () => 'never').attempt, s.attempt);
 });
 
-test('onBeginPhotoSubmit does NOT mint a new attempt (retry identity preserved)', () => {
+test('out-of-range replace / remove are no-ops', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], makeIdGen());
+  assert.equal(onPhotoRemovedAt(s, 3, makeIdGen()), s);
+  assert.equal(onPhotoReplacedAt(s, -1, gal(1), makeIdGen()), s);
+});
+
+// ── Retry / idempotency ─────────────────────────────────────────────────────
+
+test('Submit with photos reuses the attempt minted at selection (retry identity preserved)', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1), gal(1)], makeIdGen());
+  const working = onBeginSubmit(s, () => 'MUST-NOT-BE-USED');
+  assert.equal(working.attempt, s.attempt);
+  assert.equal(working.phase, 'submitting');
+  assert.ok(!allIds(working).includes('MUST-NOT-BE-USED'));
+});
+
+test('uncertain / retryable failures keep the returned attempt verbatim; the next Submit reuses every id', () => {
   const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const original = withPhoto.attempt!;
-  const begun = onBeginPhotoSubmit(withPhoto);
-  assert.ok(begun);
-  assert.equal(begun!.attempt!.clientRequestId, original.clientRequestId);
-  assert.equal(begun!.attempt!.photoObjectId, original.photoObjectId);
-  assert.equal(begun!.phase, 'submitting');
-});
-
-test('onBeginPhotoSubmit returns null when the state has no photo or no attempt (defensive)', () => {
-  assert.equal(onBeginPhotoSubmit(INITIAL_UI_STATE), null);
-});
-
-test('onSubmitUncertain preserves the returned attempt verbatim (ids intact, evidenceUploadState from orchestration)', () => {
-  const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const returnedState = {
-    clientRequestId:     withPhoto.attempt!.clientRequestId,
-    photoObjectId:       withPhoto.attempt!.photoObjectId,
-    evidenceUploadState: 'uncertain' as const,
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1), gal(1), gal(2)], gen);
+  const working = onBeginSubmit(s, gen);
+  const returned = {
+    clientRequestId: s.attempt!.clientRequestId,
+    photos: s.attempt!.photos.map((p, i) => ({ ...p, evidenceUploadState: i === 0 ? 'confirmed' as const : 'uncertain' as const })),
   };
-  const next = onSubmitUncertain(withPhoto, returnedState);
-  assert.equal(next.attempt!.clientRequestId, withPhoto.attempt!.clientRequestId);
-  assert.equal(next.attempt!.photoObjectId, withPhoto.attempt!.photoObjectId);
-  assert.equal(next.attempt!.evidenceUploadState, 'uncertain');
-  assert.equal(next.phase, 'retryable_uncertain');
-  assert.deepEqual(next.error, { kind: 'network_uncertain' });
+  const unc = onSubmitUncertain(working, returned);
+  assert.equal(unc.phase, 'retryable_uncertain');
+  assert.equal(unc.error?.kind, 'network_uncertain');
+  assert.equal(unc.attempt, returned);
+  const retry = onBeginSubmit(unc, () => 'MUST-NOT-BE-USED');
+  assert.deepEqual(allIds(retry), allIds(s));
+
+  const failed = onSubmitRetryableFailed(working, returned);
+  assert.equal(failed.phase, 'retryable_failed');
+  assert.equal(failed.attempt, returned);
 });
 
-test('onSubmitRetryableFailed preserves the returned attempt (ids intact)', () => {
+test('a terminal rejection of the attempt (null) shows attempt_rejected and blocks Submit until the set changes', () => {
   const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const returnedState = withPhoto.attempt!;
-  const next = onSubmitRetryableFailed(withPhoto, returnedState);
-  assert.equal(next.attempt!.clientRequestId, returnedState.clientRequestId);
-  assert.equal(next.attempt!.photoObjectId, returnedState.photoObjectId);
-  assert.equal(next.phase, 'retryable_failed');
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1), cam(2)], gen);
+  const rejected = onSubmitRetryableFailed(onBeginSubmit(s, gen), null);
+  assert.equal(rejected.error?.kind, 'attempt_rejected');
+  assert.equal(rejected.attempt, null);
+  assert.equal(canSubmit(rejected), false);
+  assert.equal(onBeginSubmit(rejected, gen).error?.kind, 'attempt_rejected');
+  // Recovery: change the set -> brand-new attempt.
+  const recovered = onPhotoRemovedAt(rejected, 1, gen);
+  assert.equal(canSubmit(recovered), true);
 });
 
-test('onSubmitInvalidMime surfaces validation error, state otherwise preserved', () => {
-  const next = onSubmitInvalidMime(INITIAL_UI_STATE);
-  assert.equal(next.phase, 'validation_error');
-  assert.deepEqual(next.error, { kind: 'invalid_mime' });
+test('progress is shown only while submitting', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1), cam(2)], makeIdGen());
+  assert.equal(onSubmitProgress(s, { current: 1, total: 2 }), s);
+  const w = onSubmitProgress(onBeginSubmit(s, makeIdGen()), { current: 2, total: 2 });
+  assert.deepEqual(w.progress, { current: 2, total: 2 });
+  assert.equal(onSubmitUncertain(w, w.attempt).progress, null);
 });
 
-test('onSubmitTerminalNotOpen clears attempt and surfaces terminal error', () => {
-  const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const next = onSubmitTerminalNotOpen(withPhoto);
-  assert.equal(next.attempt, null);
-  assert.equal(next.phase, 'validation_error');
-  assert.deepEqual(next.error, { kind: 'not_open' });
+// ── Terminal / error transitions ────────────────────────────────────────────
+
+test('not_open / not_authorized are terminal: attempt cleared, Submit and Add disabled', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], makeIdGen());
+  for (const t of [onSubmitTerminalNotOpen(s), onSubmitTerminalNotAuthorized(s)]) {
+    assert.equal(t.attempt, null);
+    assert.equal(isTerminalPhase(t), true);
+    assert.equal(canSubmit(t), false);
+    assert.equal(canAddPhotos(t), false);
+  }
+  assert.equal(isTerminalPhase(s), false);
+  assert.equal(isTerminalPhase(onSubmitRetryableFailed(s, s.attempt)), false);
 });
 
-test('onSubmitTerminalNotAuthorized clears attempt and surfaces terminal error', () => {
-  const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const next = onSubmitTerminalNotAuthorized(withPhoto);
-  assert.equal(next.attempt, null);
-  assert.equal(next.phase, 'validation_error');
-  assert.deepEqual(next.error, { kind: 'not_authorized' });
+test('unexpected failure / local read failure / invalid mime: never stuck submitting, photos + ids kept', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1), gal(1)], makeIdGen());
+  const w = onBeginSubmit(s, makeIdGen());
+  for (const [next, kind] of [
+    [onSubmitUnexpectedFailure(w), 'unexpected_failure'],
+    [onLocalPhotoReadFailed(w), 'photo_read_failed'],
+    [onSubmitInvalidMime(w), 'invalid_mime'],
+  ] as const) {
+    assert.notEqual(next.phase, 'submitting');
+    assert.equal(next.error?.kind, kind);
+    assert.equal(next.photos, s.photos);
+    assert.deepEqual(allIds(next), allIds(s));
+  }
 });
 
-test('onSubmitSuccess resets to the initial state so the modal can close cleanly', () => {
-  const gen = makeIdGen();
-  const withPhoto = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const next = onSubmitSuccess(withPhoto);
-  assert.deepEqual(next, INITIAL_UI_STATE);
-});
-
-test('full flow — select, submit uncertain, retry preserves same ids (correction 1 invariant)', () => {
-  // This mirrors the live QA-03 identity invariant at the UI boundary:
-  // network retry (uncertain → retry) must preserve clientRequestId AND
-  // photoObjectId. No pure-state transition in this module ever mints
-  // new ids after `onSubmitUncertain`, so a direct retry call sequence
-  // through this module naturally re-uses them.
-  const gen = makeIdGen();
-  const selected = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const originalCri   = selected.attempt!.clientRequestId;
-  const originalPhoto = selected.attempt!.photoObjectId;
-
-  const submitting = onBeginPhotoSubmit(selected)!;
-  const uncertain  = onSubmitUncertain(submitting, submitting.attempt);
-
-  // Caller retries by calling onBeginPhotoSubmit again on the uncertain
-  // state. Attempt ids must still match the originals.
-  const resumitting = onBeginPhotoSubmit({
-    ...uncertain,
-    photo: samplePhoto,
-  })!;
-  assert.equal(resumitting.attempt!.clientRequestId, originalCri);
-  assert.equal(resumitting.attempt!.photoObjectId, originalPhoto);
-});
-
-test('full flow — replace during retryable state mints NEW ids (user-changes-payload invariant)', () => {
-  const gen = makeIdGen();
-  const selected  = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const submitting = onBeginPhotoSubmit(selected)!;
-  const failed    = onSubmitRetryableFailed(submitting, submitting.attempt);
-
-  const replaced = onPhotoSelected(failed, { previewUri: 'file:///tmp/new.webp', mimeType: 'image/webp' }, gen);
-  assert.notEqual(replaced.attempt!.clientRequestId, selected.attempt!.clientRequestId);
-  assert.notEqual(replaced.attempt!.photoObjectId, selected.attempt!.photoObjectId);
-});
-
-// ─── P1 Correction pass additions ────────────────────────────────────────
-
-test('onPickerFailed from initial state keeps attempt null and records a safe error (no submission)', () => {
-  const next = onPickerFailed(INITIAL_UI_STATE);
-  assert.equal(next.attempt, null);
-  assert.equal(next.photo, null);
-  assert.deepEqual(next.error, { kind: 'picker_failed' });
-  // Phase must not become 'submitting' from a picker failure.
-  assert.notEqual(next.phase, 'submitting');
-});
-
-test('onPickerFailed during replacement preserves the previous photo, attempt, and both ids verbatim', () => {
-  const gen = makeIdGen();
-  const original = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  // Simulate user tapping "Take another photo" and the picker throwing:
-  // the Modal routes to onPickerFailed on the current state (which still
-  // holds the original photo + attempt). No new attempt is minted.
-  const afterFailure = onPickerFailed(original);
-  assert.deepEqual(afterFailure.photo, original.photo);
-  assert.equal(afterFailure.attempt!.clientRequestId, original.attempt!.clientRequestId);
-  assert.equal(afterFailure.attempt!.photoObjectId, original.attempt!.photoObjectId);
-  assert.deepEqual(afterFailure.error, { kind: 'picker_failed' });
-});
-
-test('onSubmitUnexpectedFailure exits submitting, preserves attempt + ids, child can retry (no new attempt minted)', () => {
-  const gen = makeIdGen();
-  const selected   = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const submitting = onBeginPhotoSubmit(selected)!;
-  assert.equal(submitting.phase, 'submitting');
-
-  const unexpected = onSubmitUnexpectedFailure(submitting);
-  assert.notEqual(unexpected.phase, 'submitting');
-  assert.equal(unexpected.phase, 'retryable_failed');
-  assert.equal(unexpected.attempt!.clientRequestId, selected.attempt!.clientRequestId);
-  assert.equal(unexpected.attempt!.photoObjectId, selected.attempt!.photoObjectId);
-  assert.deepEqual(unexpected.photo, selected.photo);
-  assert.deepEqual(unexpected.error, { kind: 'unexpected_failure' });
-
-  // A plain retry on the same state goes back through onBeginPhotoSubmit
-  // and MUST NOT mint new ids.
-  const retried = onBeginPhotoSubmit(unexpected)!;
-  assert.equal(retried.attempt!.clientRequestId, selected.attempt!.clientRequestId);
-  assert.equal(retried.attempt!.photoObjectId, selected.attempt!.photoObjectId);
-});
-
-test('onLocalPhotoReadFailed preserves selected photo and logical attempt (retryable)', () => {
-  const gen = makeIdGen();
-  const selected   = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const submitting = onBeginPhotoSubmit(selected)!;
-
-  const read = onLocalPhotoReadFailed(submitting);
-  assert.notEqual(read.phase, 'submitting');
-  assert.equal(read.phase, 'retryable_failed');
-  assert.equal(read.attempt!.clientRequestId, selected.attempt!.clientRequestId);
-  assert.equal(read.attempt!.photoObjectId, selected.attempt!.photoObjectId);
-  assert.deepEqual(read.photo, selected.photo);
-  assert.deepEqual(read.error, { kind: 'photo_read_failed' });
-});
-
-test('isTerminalPhase is true for not_open and not_authorized, false for retryable / idle / submitting', () => {
-  const gen = makeIdGen();
-  const selected = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  assert.equal(isTerminalPhase(onSubmitTerminalNotOpen(selected)), true);
-  assert.equal(isTerminalPhase(onSubmitTerminalNotAuthorized(selected)), true);
-  assert.equal(isTerminalPhase(INITIAL_UI_STATE), false);
-  assert.equal(isTerminalPhase(selected), false);
-  assert.equal(isTerminalPhase(onBeginPhotoSubmit(selected)!), false);
-  assert.equal(isTerminalPhase(onSubmitUncertain(selected, selected.attempt)), false);
-  assert.equal(isTerminalPhase(onSubmitRetryableFailed(selected, selected.attempt)), false);
-  assert.equal(isTerminalPhase(onSubmitUnexpectedFailure(selected)), false);
-  // invalid_mime is also a 'validation_error' phase but with a non-terminal
-  // kind, so the child may retry with another photo. Must NOT be terminal.
-  assert.equal(isTerminalPhase(onSubmitInvalidMime(selected)), false);
-});
-
-test('successful Camera replacement mints a NEW clientRequestId AND photoObjectId (both)', () => {
-  // Modal routes both camera and gallery replacements through onPhotoSelected,
-  // so this invariant is identical for both sources — asserted once per source.
-  const gen = makeIdGen();
-  const first = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const cameraReplacement = onPhotoSelected(
-    first,
-    { previewUri: 'file:///tmp/camera-capture.jpg', mimeType: 'image/jpeg' },
-    gen,
-  );
-  assert.notEqual(cameraReplacement.attempt!.clientRequestId, first.attempt!.clientRequestId);
-  assert.notEqual(cameraReplacement.attempt!.photoObjectId, first.attempt!.photoObjectId);
-  assert.equal(cameraReplacement.attempt!.evidenceUploadState, 'not_uploaded');
-});
-
-test('successful Gallery replacement mints a NEW clientRequestId AND photoObjectId (both)', () => {
-  const gen = makeIdGen();
-  const first = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const galleryReplacement = onPhotoSelected(
-    first,
-    { previewUri: 'file:///tmp/gallery-pick.webp', mimeType: 'image/webp' },
-    gen,
-  );
-  assert.notEqual(galleryReplacement.attempt!.clientRequestId, first.attempt!.clientRequestId);
-  assert.notEqual(galleryReplacement.attempt!.photoObjectId, first.attempt!.photoObjectId);
-});
-
-test('terminal not_open cannot be followed by onBeginPhotoSubmit minting a fresh attempt (defensive)', () => {
-  const gen = makeIdGen();
-  const selected = onPhotoSelected(INITIAL_UI_STATE, samplePhoto, gen);
-  const terminal = onSubmitTerminalNotOpen(selected);
-  // Terminal state has attempt=null, so onBeginPhotoSubmit returns null —
-  // the Modal's actionsDisabled gate also prevents the user ever reaching
-  // this call. Belt + braces: both the state module and the Modal refuse.
-  assert.equal(terminal.attempt, null);
-  assert.equal(onBeginPhotoSubmit(terminal), null);
+test('success resets to the initial state so the modal can close cleanly', () => {
+  const s = onPhotosAdded(INITIAL_UI_STATE, [cam(1)], makeIdGen());
+  assert.deepEqual(onSubmitSuccess(onBeginSubmit(s, makeIdGen())), INITIAL_UI_STATE);
 });

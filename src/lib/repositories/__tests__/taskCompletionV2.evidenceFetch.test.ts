@@ -7,11 +7,11 @@
 // process with the configured-env values in place, so `supabase` becomes
 // non-null and the public function's real algorithm (session resolution
 // → access_token ?? supabaseKey → direct POST to the Edge Function
-// endpoint derived from supabaseUrl → response.blob() on success) is
+// endpoint derived from supabaseUrl → response.arrayBuffer() on success) is
 // what the tests actually drive.
 //
 // No code is modified. The production function remains exactly:
-//   fetchTaskCompletionEvidence(submissionId: string): Promise<EdgeFunctionResult<Blob>>
+//   fetchTaskCompletionEvidence(submissionId: string): Promise<EdgeFunctionResult<TaskCompletionEvidenceBytes>>
 // — no caller-substitutable endpoint/apikey/bearer/fetch. The tests
 // control the environment, not the API surface.
 
@@ -103,7 +103,7 @@ after(() => {
 });
 
 // ── 1. Binary-safe image success ─────────────────────────────────────────
-test('fetchTaskCompletionEvidence returns a byte-identical Blob for a 200 image/png response', async () => {
+test('fetchTaskCompletionEvidence returns byte-identical raw bytes + the response MIME for a 200 image/png response', async () => {
   stubGetSession({
     data: { session: { access_token: 'test-access-token' } as never },
     error: null,
@@ -114,10 +114,11 @@ test('fetchTaskCompletionEvidence returns a byte-identical Blob for a 200 image/
   const result = await fetchTaskCompletionEvidence(SUBMISSION_ID);
 
   assert.equal(result.error, null);
-  assert.ok(result.data instanceof Blob);
-  assert.equal(result.data!.type, 'image/png');
+  assert.ok(result.data!.bytes instanceof ArrayBuffer);
+  assert.ok(!((result.data as unknown) instanceof Blob));
+  assert.equal(result.data!.mimeType, 'image/png');
 
-  const bytes = Buffer.from(await result.data!.arrayBuffer());
+  const bytes = Buffer.from(result.data!.bytes);
   assert.equal(bytes.length, PNG_BYTES.length);
   assert.equal(bytes[0], 0x89);
   assert.equal(bytes[1], 0x50);
@@ -242,7 +243,7 @@ test('fetchTaskCompletionEvidence maps a fetch rejection to FunctionsFetchError,
 });
 
 // ── 7. Body-consumption rejection ────────────────────────────────────────
-test('fetchTaskCompletionEvidence maps a response.blob() rejection to FunctionsFetchError, no throw, context preserved', async () => {
+test('fetchTaskCompletionEvidence maps a body-read rejection to FunctionsFetchError, no throw, context preserved', async () => {
   stubGetSession({
     data: { session: { access_token: 'tok' } as never },
     error: null,
@@ -268,4 +269,32 @@ test('fetchTaskCompletionEvidence maps a response.blob() rejection to FunctionsF
   assert.equal(result!.data, null);
   assert.ok(result!.error instanceof FunctionsFetchError);
   assert.ok((result!.error as FunctionsFetchError).context !== undefined);
+});
+
+// ── 8. Never touches Response.blob() (React Native cannot build that Blob) ──
+test('fetchTaskCompletionEvidence never calls response.blob() and passes Content-Type through verbatim', async () => {
+  stubGetSession({
+    data: { session: { access_token: 'tok' } as never },
+    error: null,
+  } as GetSessionReturn);
+  let blobCalls = 0;
+  currentFetchStub = async () => {
+    const response = new Response(PNG_BYTES, { status: 200, headers: { 'Content-Type': 'image/jpeg; charset=binary' } });
+    response.blob = async () => {
+      blobCalls += 1;
+      throw new Error("Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported");
+    };
+    return response;
+  };
+
+  const result = await fetchTaskCompletionEvidence(SUBMISSION_ID);
+
+  assert.equal(result.error, null);
+  assert.equal(blobCalls, 0);
+  assert.equal(result.data!.mimeType, 'image/jpeg; charset=binary');
+  assert.equal(result.data!.bytes.byteLength, PNG_BYTES.length);
+  // Only the Edge Function endpoint was called — no Storage URL of any kind.
+  assert.equal(observedFetchCalls.length, 1);
+  assert.equal(observedFetchCalls[0].url, EXPECTED_URL);
+  assert.ok(!observedFetchCalls[0].url.includes('/storage/'));
 });

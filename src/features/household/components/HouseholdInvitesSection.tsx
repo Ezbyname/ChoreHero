@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { Card } from '@/components/ui/Card';
 import { copy } from '@/content/copy';
 import { createInvite } from '@/features/household/createInvite';
 import { revokeInvite } from '@/features/household/revokeInvite';
@@ -80,63 +83,56 @@ export function HouseholdInvitesSection({ householdId, createdByProfileId, role 
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.householdInvites.title}</Text>
-      <Text style={styles.body}>{copy.householdInvites.body}</Text>
+      <Text style={styles.sectionTitle} accessibilityRole="header">{copy.householdInvites.title}</Text>
+      <Card style={styles.card}>
+        <Text style={styles.body}>{copy.householdInvites.body}</Text>
 
-      <View style={styles.roleRow}>
-        {INVITABLE_ROLES.map((r) => (
-          <TouchableOpacity
-            key={r}
-            style={[styles.roleChip, selectedRole === r && styles.roleChipActive]}
-            onPress={() => setSelectedRole(r)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.roleChipText, selectedRole === r && styles.roleChipTextActive]}>
-              {copy.householdInvites.roleLabels[r]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity
-        style={[styles.createButton, isCreating && styles.buttonDisabled]}
-        onPress={handleCreate}
-        disabled={isCreating}
-        activeOpacity={0.8}
-      >
-        {isCreating ? (
-          <ActivityIndicator size="small" color={colors.surface} />
-        ) : (
-          <Text style={styles.createButtonText}>{copy.householdInvites.createButton}</Text>
-        )}
-      </TouchableOpacity>
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      {isLoadingInvites ? null : invites.length === 0 ? (
-        <Text style={styles.emptyText}>{copy.householdInvites.empty}</Text>
-      ) : (
-        invites.map((invite) => (
-          <View key={invite.id} style={styles.inviteRow}>
-            <View style={styles.inviteInfo}>
-              <Text style={styles.inviteCode}>{invite.code}</Text>
-              <Text style={styles.inviteMeta}>{copy.householdInvites.roleLabels[invite.role]}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.revokeButton}
-              onPress={() => handleRevoke(invite.id)}
-              disabled={pendingRevokeId === invite.id}
-              activeOpacity={0.7}
+        <View style={styles.roleRow}>
+          {INVITABLE_ROLES.map((r) => (
+            <Pressable
+              key={r}
+              style={[styles.roleChip, selectedRole === r && styles.roleChipActive]}
+              onPress={() => setSelectedRole(r)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedRole === r }}
             >
-              {pendingRevokeId === invite.id ? (
-                <ActivityIndicator size="small" color={colors.textSecondary} />
-              ) : (
-                <Text style={styles.revokeButtonText}>{copy.householdInvites.revokeButton}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ))
-      )}
+              <Text style={[styles.roleChipText, selectedRole === r && styles.roleChipTextActive]}>
+                {copy.householdInvites.roleLabels[r]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <AppButton
+          label={copy.householdInvites.createButton}
+          icon="person-add-outline"
+          onPress={() => { void handleCreate(); }}
+          busy={isCreating}
+        />
+
+        {error ? <Banner tone="danger" text={error} /> : null}
+
+        {isLoadingInvites ? null : invites.length === 0 ? (
+          <Text style={styles.emptyText}>{copy.householdInvites.empty}</Text>
+        ) : (
+          invites.map((invite) => (
+            <View key={invite.id} style={styles.inviteRow}>
+              <View style={styles.inviteInfo}>
+                <Text style={styles.inviteCode} selectable>{invite.code}</Text>
+                <Text style={styles.inviteMeta}>{copy.householdInvites.roleLabels[invite.role]}</Text>
+              </View>
+              <AppButton
+                label={copy.householdInvites.revokeButton}
+                variant="dangerOutline"
+                compact
+                busy={pendingRevokeId === invite.id}
+                disabled={pendingRevokeId !== null && pendingRevokeId !== invite.id}
+                onPress={() => { void handleRevoke(invite.id); }}
+              />
+            </View>
+          ))
+        )}
+      </Card>
     </View>
   );
 }
@@ -145,103 +141,69 @@ const styles = StyleSheet.create({
   section: {
     marginTop:         spacing.lg,
     paddingHorizontal: spacing.xl,
+    gap:               spacing.sm,
   },
   sectionTitle: {
-    ...typography.caption,
-    color:         colors.textMuted,
-    fontWeight:    '600',
+    ...typography.label,
+    color:         colors.textSecondary,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom:  spacing.sm,
+  },
+  card: {
+    gap: spacing.md,
   },
   body: {
     ...typography.caption,
-    color:        colors.textSecondary,
-    marginBottom: spacing.sm,
+    color: colors.textSecondary,
   },
   roleRow: {
     flexDirection: 'row',
-    gap:           spacing.xs,
-    marginBottom:  spacing.sm,
+    flexWrap:      'wrap',
+    gap:           spacing.sm,
   },
   roleChip: {
+    minHeight:         40,
+    justifyContent:    'center',
     borderRadius:      radius.pill,
     borderWidth:       1,
-    borderColor:       colors.borderSoft,
+    borderColor:       colors.border,
     paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.xs,
   },
   roleChipActive: {
     borderColor:     colors.primary,
     backgroundColor: colors.primarySoft,
   },
   roleChipText: {
-    ...typography.caption,
-    color:      colors.textSecondary,
-    fontWeight: '600',
+    ...typography.label,
+    color: colors.textSecondary,
   },
   roleChipTextActive: {
     color: colors.primary,
   },
-  createButton: {
-    backgroundColor: colors.primary,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-    marginBottom:    spacing.sm,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  createButtonText: {
-    ...typography.caption,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  errorText: {
-    ...typography.caption,
-    color:        '#B91C1C',
-    marginBottom: spacing.sm,
-  },
   emptyText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   inviteRow: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'space-between',
-    backgroundColor:   colors.surface,
-    borderRadius:      10,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    paddingHorizontal: spacing.lg,
-    paddingVertical:   spacing.sm,
-    marginBottom:      spacing.xs,
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            spacing.md,
+    paddingTop:     spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
   },
   inviteInfo: {
-    gap: 2,
+    flex: 1,
+    gap:  2,
   },
   inviteCode: {
-    ...typography.body,
+    ...typography.bodyStrong,
     color:         colors.textPrimary,
-    fontWeight:    '700',
-    letterSpacing: 1,
+    letterSpacing: 2,
   },
   inviteMeta: {
     ...typography.caption,
-    color: colors.textMuted,
-  },
-  revokeButton: {
-    borderRadius:      8,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.xs,
-  },
-  revokeButtonText: {
-    ...typography.caption,
-    color:      colors.textSecondary,
-    fontWeight: '600',
+    color: colors.textSecondary,
   },
 });

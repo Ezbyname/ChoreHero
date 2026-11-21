@@ -1,7 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { AppButton } from '@/components/ui/AppButton';
+import { FormScreen } from '@/components/ui/FormScreen';
 import { copy } from '@/content/copy';
 import type { AuthStackParamList } from '@/navigation/types';
 import { colors, spacing, typography } from '@/theme';
@@ -12,87 +14,22 @@ export function AuthWelcomeScreen() {
   const navigation = useNavigation<Nav>();
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>{copy.auth.welcomeTitle}</Text>
-        <Text style={styles.subtitle}>{copy.auth.welcomeSubtitle}</Text>
-        <Text style={styles.body}>{copy.auth.welcomeBody}</Text>
-
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => navigation.navigate('Signup')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.primaryButtonText}>{copy.auth.createAccount}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate('Login')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.secondaryButtonText}>{copy.auth.signInButton}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    <FormScreen title={copy.auth.welcomeTitle} subtitle={copy.auth.welcomeSubtitle} hero={<Text style={styles.hero}>🦸</Text>}>
+      <Text style={styles.body}>{copy.auth.welcomeBody}</Text>
+      <AppButton label={copy.auth.createAccount} onPress={() => navigation.navigate('Signup')} />
+      <AppButton label={copy.auth.signInButton} variant="secondary" onPress={() => navigation.navigate('Login')} />
+    </FormScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex:              1,
-    backgroundColor:   colors.background,
-    alignItems:        'center',
-    justifyContent:    'center',
-    paddingHorizontal: spacing.xl,
-  },
-  content: {
-    alignItems: 'center',
-    maxWidth:   320,
-    width:      '100%',
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    textAlign:    'center',
-    marginBottom: spacing.md,
-  },
-  subtitle: {
-    ...typography.body,
-    color:        colors.textMuted,
-    textAlign:    'center',
-    marginBottom: spacing.lg,
+  hero: {
+    fontSize: 56,
   },
   body: {
-    ...typography.caption,
-    color:        colors.textMuted,
+    ...typography.body,
+    color:        colors.textSecondary,
     textAlign:    'center',
-    marginBottom: spacing.xxxl,
-  },
-  primaryButton: {
-    backgroundColor:   colors.primary,
-    borderRadius:      12,
-    paddingVertical:   spacing.md,
-    alignItems:        'center',
-    width:             '100%',
-    marginBottom:      spacing.sm,
-  },
-  primaryButtonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    borderWidth:     1,
-    borderColor:     colors.borderSoft,
-    borderRadius:    12,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    width:           '100%',
-  },
-  secondaryButtonText: {
-    ...typography.body,
-    color:      colors.textSecondary,
-    fontWeight: '500',
+    marginBottom: spacing.sm,
   },
 });

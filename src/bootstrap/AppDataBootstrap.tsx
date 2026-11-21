@@ -18,8 +18,10 @@ import {
   getPointsBalancesForHousehold,
   getContributionClaimsForHousehold,
   getRewardRedemptionsForHousehold,
+  getTaskSubmissionSummariesForHousehold,
 } from '@/lib/repositories';
 import { sortHouseholdCandidatesDeterministically } from '@/guards/hydrationInvariants';
+import { markHouseholdDataFresh } from '@/features/sync/householdRefresh';
 import type { HydrationContext } from '@/types/hydration';
 import type { HouseholdRow } from '@/types/supabase';
 
@@ -261,7 +263,7 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
 
     // ── Phase 3: Domain (parallel) ───────────────────────────────────────
 
-    const [membersResult, tasksResult, rewardsResult, pointsResult, claimsResult, redemptionsResult] =
+    const [membersResult, tasksResult, rewardsResult, pointsResult, claimsResult, redemptionsResult, submissionsResult] =
       await Promise.all([
         getHouseholdMembers(activeHousehold.id),
         getTasksForHousehold(activeHousehold.id),
@@ -273,6 +275,9 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
         // determines whether a child's rows are limited to their own or an
         // adult+ sees the whole household's, not this fetch.
         getRewardRedemptionsForHousehold(activeHousehold.id),
+        // Metadata only (status + photo count). Non-critical: a failure here
+        // degrades to no photo badges / plainer statuses, never a failed run.
+        getTaskSubmissionSummariesForHousehold(activeHousehold.id),
       ]);
 
     if (isStale()) return;
@@ -334,11 +339,14 @@ export function AppDataBootstrap({ children }: AppDataBootstrapProps) {
       pointsBalances:     pointsResult.data,
       contributionClaims: claimsResult.data,
       rewardRedemptions:  redemptionsResult.data,
+      taskSubmissions:    submissionsResult.data ?? [],
       activeHouseholdId:  activeHousehold.id,
       hasNoHousehold:     false,
     };
 
     commitHydrationSnapshot({ context, runId, sequence });
+    // The first tab focus right after hydration need not refetch again.
+    markHouseholdDataFresh();
   }
 
   return <>{children}</>;

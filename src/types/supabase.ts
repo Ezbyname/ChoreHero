@@ -79,7 +79,8 @@ export type RewardRedemptionStatus =
 export type TaskCompletionSubmissionStatus =
   | 'pending'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'withdrawn';
 
 // ============================================================
 // DATABASE TYPE
@@ -559,6 +560,11 @@ export interface Database {
           submitted_at:            string;
           created_at:              string;
           updated_at:              string;
+          // 20261030000000_task_completion_multi_photo.sql. Optional so a
+          // backend without that migration yet still type-checks the same
+          // rows; photo_count is metadata only (no path, no bytes).
+          extra_photo_count?:      number;
+          photo_count?:            number;
         };
         Insert: never;
         Update: never;
@@ -624,6 +630,16 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
       };
+      // Up to 5 evidence photos
+      // (20261030000000_task_completion_multi_photo.sql).
+      request_task_completion_v3: {
+        Args: {
+          p_task_id:           string;
+          p_client_request_id: string;
+          p_photo_object_ids:  string[];
+        };
+        Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
+      };
       approve_task_completion_v2: {
         Args: {
           p_submission_id: string;
@@ -631,6 +647,12 @@ export interface Database {
         Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
       };
       reject_task_completion_v2: {
+        Args: {
+          p_submission_id: string;
+        };
+        Returns: Database['public']['Tables']['task_completion_submissions']['Row'];
+      };
+      withdraw_task_completion_v2: {
         Args: {
           p_submission_id: string;
         };

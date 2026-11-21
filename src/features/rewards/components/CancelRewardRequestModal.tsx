@@ -1,8 +1,7 @@
 import React from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { copy } from '@/content/copy';
 import { formatCancelRewardRequestBody } from '@/features/rewards/cancelRewardRequestCopy';
-import { colors, radius, spacing, typography } from '@/theme';
 
 // Reward Reserved Points — "Changed my mind" confirmation. Mirrors
 // ConfirmRewardRequestModal.tsx's structure and its RN-core-Modal-not-
@@ -25,68 +24,13 @@ export function CancelRewardRequestModal({
   onCancelRequest: () => void;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onKeepRequest}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{copy.rewardCancelConfirm.title}</Text>
-          <Text style={styles.body}>{formatCancelRewardRequestBody(pendingPoints)}</Text>
-
-          <TouchableOpacity style={styles.keepButton} onPress={onKeepRequest} activeOpacity={0.8}>
-            <Text style={styles.keepButtonText}>{copy.rewardCancelConfirm.keepCta}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.cancelButton} onPress={onCancelRequest} activeOpacity={0.8}>
-            <Text style={styles.cancelButtonText}>{copy.rewardCancelConfirm.cancelCta}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmDialog
+      visible={visible}
+      title={copy.rewardCancelConfirm.title}
+      body={formatCancelRewardRequestBody(pendingPoints)}
+      primary={{ label: copy.rewardCancelConfirm.keepCta, onPress: onKeepRequest }}
+      secondary={{ label: copy.rewardCancelConfirm.cancelCta, onPress: onCancelRequest, variant: 'dangerOutline' }}
+      onDismiss={onKeepRequest}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  backdrop: {
-    flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems:      'center',
-    justifyContent:  'center',
-    padding:         spacing.xl,
-  },
-  card: {
-    width:           '100%',
-    maxWidth:        360,
-    backgroundColor: colors.surface,
-    borderRadius:    radius.lg,
-    padding:         spacing.xl,
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  body: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    marginBottom: spacing.lg,
-  },
-  keepButton: {
-    backgroundColor: colors.primary,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginBottom:    spacing.sm,
-  },
-  keepButtonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-  },
-  cancelButtonText: {
-    ...typography.body,
-    color: colors.textMuted,
-  },
-});

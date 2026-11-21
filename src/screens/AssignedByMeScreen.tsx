@@ -1,15 +1,33 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { TextField } from '@/components/ui/TextField';
 import { copy } from '@/content/copy';
+import { formatCopy } from '@/content/formatCopy';
 import { TaskAdapter } from '@/domain/adapters';
 import { toDateOnlyISOString, toTimedISOString } from '@/domain/dateFormat';
 import { createTask } from '@/features/tasks/createTask';
+import {
+  INITIAL_CREATE_PHASE,
+  createSingleFlight,
+  onCreateTaskEdited,
+  onCreateTaskResult,
+  onCreateTaskStarted,
+  onCreateTaskThrew,
+  shouldResetCreateForm,
+  type CreateTaskPhase,
+} from '@/features/tasks/createTaskFormState';
 import { getTasksCreatedByUser } from '@/features/tasks/taskFilters';
+import { deriveTaskStatus, latestSubmissionByTask, type TaskStatusKey } from '@/features/tasks/taskListSections';
+import { useHouseholdRefreshControl } from '@/features/sync/useHouseholdRefreshControl';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanCreateTasks,
@@ -18,14 +36,24 @@ import {
   selectCurrentUser,
   selectTasks,
 } from '@/store/selectors';
-import { colors, radius, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, typography } from '@/theme';
+
+const STATUS_LABEL: Record<TaskStatusKey, string> = {
+  open:               copy.taskStatus.open,
+  open_to_anyone:     copy.taskStatus.openToAnyone,
+  in_progress:        copy.taskStatus.inProgress,
+  waiting_for_review: copy.taskStatus.waitingForReview,
+  completed:          copy.taskStatus.completed,
+  needs_retry:        copy.taskStatus.needsRetry,
+  taken_back:         copy.taskStatus.takenBack,
+};
 
 // null in this picker means "Open to anyone" (no assignee) — an Open Task.
 type AssigneeChoice = string | null;
 
 const DESCRIPTION_MAX_LENGTH = 500; // P2-D01/P2-D09: enforced here, UI layer only.
 
-function CreateTaskForm({
+export function CreateTaskForm({
   householdId,
   createdByProfileId,
   role,
@@ -48,9 +76,12 @@ function CreateTaskForm({
   const [hasTime, setHasTime]           = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback]         = useState<string | null>(null);
+  const [phase, setPhase]               = useState<CreateTaskPhase>(INITIAL_CREATE_PHASE);
   const [validation, setValidation]     = useState<string | null>(null);
+  // One tap = one task: a second tap that lands before the disabled state
+  // re-renders is dropped here.
+  const singleFlight = useRef(createSingleFlight()).current;
+  const isSubmitting = phase.kind === 'submitting';
 
   // P2-D05: warning only, never blocks submission.
   const isPastDue = dueDate != null && dueDate.getTime() < Date.now();
@@ -88,7 +119,15 @@ function CreateTaskForm({
     setHasTime(false);
   }
 
+  function edited() {
+    setPhase(onCreateTaskEdited);
+  }
+
   async function handleCreate() {
+    await singleFlight(() => doCreate());
+  }
+
+  async function doCreate() {
     if (isSubmitting) return;
 
     const trimmed = title.trim();
@@ -102,8 +141,7 @@ function CreateTaskForm({
     }
 
     setValidation(null);
-    setFeedback(null);
-    setIsSubmitting(true);
+    setPhase(onCreateTaskStarted());
 
     const points = pointsText.trim() ? Number(pointsText.trim()) : undefined;
 
@@ -113,57 +151,67 @@ function CreateTaskForm({
           : toDateOnlyISOString(dueDate.getFullYear(), dueDate.getMonth() + 1, dueDate.getDate()))
       : undefined;
 
-    const result = await createTask({
-      householdId,
-      title:               trimmed,
-      description:         description.trim() || undefined,
-      createdByProfileId,
-      assigneeProfileId:  assignee,
-      dueAt,
-      dueAtHasTime:        dueAt ? hasTime : undefined,
-      points:              Number.isFinite(points) ? points : undefined,
-      role,
-    });
+    let next: CreateTaskPhase;
+    try {
+      const result = await createTask({
+        householdId,
+        title:               trimmed,
+        description:         description.trim() || undefined,
+        createdByProfileId,
+        assigneeProfileId:  assignee,
+        dueAt,
+        dueAtHasTime:        dueAt ? hasTime : undefined,
+        points:              Number.isFinite(points) ? points : undefined,
+        role,
+      });
+      next = onCreateTaskResult(result, trimmed);
+    } catch {
+      next = onCreateTaskThrew();
+    }
 
-    if (result.ok) {
+    // Success: clear for the next task. Failure: keep everything typed.
+    if (shouldResetCreateForm(next)) {
       setTitle('');
       setDescription('');
       setAssignee(null);
       setPointsText('');
       setDueDate(null);
       setHasTime(false);
-      setFeedback(copy.createTask.success);
-    } else {
-      setFeedback(copy.createTask.error);
     }
-    setIsSubmitting(false);
+    setPhase(next);
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{copy.createTask.title}</Text>
+      <SectionHeader title={copy.createTask.title} />
+      <Card style={styles.formCard}>
+      {phase.kind === 'created' && (
+        <Banner
+          tone="success"
+          title={copy.createTask.success}
+          text={formatCopy(copy.createTask.successDetail, { title: phase.title })}
+        />
+      )}
 
-      <TextInput
-        style={[styles.input, validation && styles.inputError]}
+      <TextField
+        label={copy.createTask.titleLabel}
         value={title}
         onChangeText={(text) => {
           setTitle(text);
+          edited();
           if (validation) setValidation(null);
         }}
         placeholder={copy.createTask.fieldPlaceholder}
-        placeholderTextColor={colors.textMuted}
         editable={!isSubmitting}
         returnKeyType="done"
+        error={validation}
       />
-      {validation && <Text style={styles.validationText}>{validation}</Text>}
 
-      <Text style={styles.label}>{copy.createTask.descriptionLabel}</Text>
-      <TextInput
-        style={[styles.input, styles.multilineInput]}
+      <TextField
+        label={copy.createTask.descriptionLabel}
         value={description}
         onChangeText={setDescription}
         placeholder={copy.createTask.descriptionPlaceholder}
-        placeholderTextColor={colors.textMuted}
         editable={!isSubmitting}
         multiline
         maxLength={DESCRIPTION_MAX_LENGTH}
@@ -267,60 +315,67 @@ function CreateTaskForm({
         />
       )}
 
-      <Text style={styles.label}>{copy.createTask.pointsLabel}</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label={copy.createTask.pointsLabel}
         value={pointsText}
         onChangeText={setPointsText}
         placeholder={copy.createTask.pointsPlaceholder}
-        placeholderTextColor={colors.textMuted}
         keyboardType="number-pad"
         editable={!isSubmitting}
       />
 
-      <TouchableOpacity
-        style={[styles.button, isSubmitting && styles.buttonDisabled]}
-        onPress={handleCreate}
-        disabled={isSubmitting}
-        activeOpacity={0.8}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator size="small" color={colors.surface} />
-        ) : (
-          <Text style={styles.buttonText}>{copy.createTask.button}</Text>
-        )}
-      </TouchableOpacity>
+      {phase.kind === 'failed' && <Banner tone="danger" text={copy.createTask.error} />}
 
-      {feedback && <Text style={styles.feedbackText}>{feedback}</Text>}
+      <AppButton
+        label={copy.createTask.button}
+        icon="add-circle-outline"
+        onPress={() => { void handleCreate(); }}
+        busy={isSubmitting}
+        busyLabel={copy.createTask.creating}
+        style={styles.createButton}
+      />
+      </Card>
     </View>
   );
 }
 
-export function AssignedByMeScreen() {
+// headerAccessory: optional navigation slot passed in by the tab shell (Slice 4).
+// The screen itself never navigates.
+export function AssignedByMeScreen({ headerAccessory }: { headerAccessory?: React.ReactNode } = {}) {
+  const refreshControl = useHouseholdRefreshControl();
   const tasks         = useAppStore(selectTasks);
   const household      = useAppStore(selectCurrentHousehold);
   const user             = useAppStore(selectCurrentUser);
   const role              = useAppStore(selectCurrentMemberRole);
   const canCreateTasks     = useAppStore(selectCanCreateTasks);
+  const taskSubmissions    = useAppStore((s) => s.taskSubmissions);
   const members = household?.members ?? [];
 
+  // Newest first, so a just-created task is at the top of the list.
   const myAssignedTasks = useMemo(
-    () => (user ? getTasksCreatedByUser(tasks, user.id) : []),
+    () => (user ? getTasksCreatedByUser(tasks, user.id) : [])
+      .slice()
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
     [tasks, user],
   );
+  // Status shown on every card, from the real task + latest submission
+  // state. Display only: these cards carry no actions here.
   const activities = useMemo(
-    () => myAssignedTasks.map(TaskAdapter.toFamilyActivity),
+    () => myAssignedTasks.map(TaskAdapter.toFamilyActivity).map((a) => ({ ...a, availableActions: [] })),
     [myAssignedTasks],
   );
+  const latest = useMemo(() => latestSubmissionByTask(taskSubmissions), [taskSubmissions]);
+  const taskById = useMemo(() => new Map(myAssignedTasks.map((t) => [t.id, t])), [myAssignedTasks]);
 
   return (
     <Screen style={styles.screen}>
       <ScreenHeader
         title={copy.screens.assigned.title}
         subtitle={copy.screens.assigned.subtitle}
+        accessory={headerAccessory}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list} refreshControl={refreshControl}>
         {canCreateTasks && household && user && (
           <CreateTaskForm
             householdId={household.id}
@@ -330,9 +385,23 @@ export function AssignedByMeScreen() {
         )}
 
         {myAssignedTasks.length === 0 ? (
-          <EmptyState message={copy.emptyStates.assigned} emoji="📋" />
+          <View style={styles.empty}>
+            <EmptyState message={copy.emptyStates.assigned} emoji="📋" />
+          </View>
         ) : (
-          <ActivityList activities={activities} members={members} />
+          <View style={styles.section}>
+            <SectionHeader title={copy.createTask.yourTasksTitle} count={myAssignedTasks.length} />
+            <ActivityList
+              activities={activities}
+              members={members}
+              decorate={(a) => {
+                const task = taskById.get(a.id);
+                if (!task) return undefined;
+                const s = deriveTaskStatus(task, latest.get(a.id));
+                return { status: { label: STATUS_LABEL[s.key], tone: s.tone } };
+              }}
+            />
+          </View>
         )}
       </ScrollView>
     </Screen>
@@ -350,43 +419,31 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.xl,
   },
-  sectionTitle: {
-    ...typography.body,
-    color:        colors.textPrimary,
-    fontWeight:   '600',
-    marginBottom: spacing.md,
+  formCard: {
+    gap: spacing.sm,
+  },
+  empty: {
+    minHeight: 220,
+  },
+  createButton: {
+    marginTop: spacing.md,
   },
   label: {
-    ...typography.caption,
-    color:      colors.textMuted,
-    fontWeight: '600',
-    marginTop:  spacing.sm,
+    ...typography.label,
+    color:        colors.textSecondary,
+    marginTop:    spacing.sm,
     marginBottom: spacing.xs,
   },
-  input: {
-    ...typography.body,
-    color:             colors.textPrimary,
-    backgroundColor:   colors.surface,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    borderRadius:      radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.sm,
-  },
-  multilineInput: {
-    minHeight:   72,
-    textAlignVertical: 'top',
-  },
-  inputError: {
-    borderColor: '#B91C1C',
-  },
+
+
+
   validationText: {
     ...typography.caption,
-    color: '#B91C1C',
+    color: colors.danger,
   },
   recommendationText: {
     ...typography.caption,
-    color:     colors.textMuted,
+    color:     colors.textSecondary,
     marginTop: spacing.xs,
   },
   dueDateRow: {
@@ -410,9 +467,12 @@ const styles = StyleSheet.create({
     gap:           spacing.xs,
   },
   chip: {
+    minHeight:         40,
+    justifyContent:    'center',
     borderRadius:      radius.pill,
     borderWidth:       1,
-    borderColor:       colors.borderSoft,
+    borderColor:       colors.border,
+    backgroundColor:   colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical:   spacing.xs,
   },
@@ -428,24 +488,5 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.primary,
   },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius:    radius.md,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginTop:       spacing.md,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  feedbackText: {
-    ...typography.caption,
-    color:     colors.textMuted,
-    marginTop: spacing.sm,
-  },
+
 });

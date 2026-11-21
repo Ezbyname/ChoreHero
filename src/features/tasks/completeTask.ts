@@ -35,30 +35,35 @@ export async function completeTask(input: CompleteTaskInput): Promise<CompleteTa
   }
 
   if (!isSupabaseConfigured) {
-    const { tasks, setTasks, pointsBalances, setPointsBalances, user } = useAppStore.getState();
+    const { tasks, setTasks, pointsBalances, setPointsBalances } = useAppStore.getState();
     const task = tasks.find((t) => t.id === input.taskId);
     if (!task || task.status !== 'open') {
       return { ok: false, reason: 'not_open' };
     }
+    // Slice 6B.2: an unclaimed open-to-anyone task has no one to credit
+    // yet — the RPC refuses it (CH022), which the Supabase path below
+    // also reports as 'failed'.
+    const recipientId = task.assigneeId;
+    if (!recipientId) {
+      return { ok: false, reason: 'failed' };
+    }
 
     setTasks(tasks.map((t) => (t.id === input.taskId ? { ...t, status: 'completed' } : t)));
 
-    // EX-10: award points to the completer (direct completion — worker
-    // credit is the caller themselves, mirroring the real RPC's
-    // completed_by_profile_id = v_caller). Upserts the same way the RPC's
-    // ON CONFLICT DO UPDATE does — increment if a balance row already
-    // exists, otherwise create one.
-    if (user) {
-      const awarded  = task.points ?? 0;
-      const existing = pointsBalances.find((pb) => pb.userId === user.id);
-      setPointsBalances(
-        existing
-          ? pointsBalances.map((pb) =>
-              pb.userId === user.id ? { ...pb, balance: pb.balance + awarded } : pb,
-            )
-          : [...pointsBalances, { userId: user.id, householdId: task.householdId ?? input.householdId, balance: awarded }],
-      );
-    }
+    // EX-10 + Slice 6B.2: Points go to the task's assignee, never to the
+    // adult who pressed Complete — mirroring the real RPC
+    // (20261118000000_complete_task_points_to_assignee.sql). Upserts the
+    // same way the RPC's ON CONFLICT DO UPDATE does — increment if a
+    // balance row already exists, otherwise create one.
+    const awarded  = task.points ?? 0;
+    const existing = pointsBalances.find((pb) => pb.userId === recipientId);
+    setPointsBalances(
+      existing
+        ? pointsBalances.map((pb) =>
+            pb.userId === recipientId ? { ...pb, balance: pb.balance + awarded } : pb,
+          )
+        : [...pointsBalances, { userId: recipientId, householdId: task.householdId ?? input.householdId, balance: awarded }],
+    );
 
     return { ok: true };
   }

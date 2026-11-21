@@ -34,8 +34,10 @@ import {
 // plain Node does not), which is exactly why RewardCard.tsx's own copy of
 // this wrapper has no test file either.
 
+// Raw bytes, never a Blob — see materializeEvidencePhoto.ts for why a
+// React Native Blob cannot be built from a picker file's bytes.
 export type EvidencePhotoInput = {
-  blob:     Blob;
+  bytes:    ArrayBuffer;
   mimeType: string;
 };
 
@@ -105,22 +107,16 @@ export async function ensureEvidenceUploaded(
     photoObjectId:         state.photoObjectId,
   });
 
-  // Unconditional re-wrap, not a conditional check against the input
-  // blob's own .type — that native provenance (fetch(uri).blob() on RN) is
-  // unverifiable from this sandbox. Re-wrapping guarantees the multipart
-  // Content-Type storage-js sends matches the trusted, picker-provided
-  // mimeType regardless of what the native fetch/blob layer produced.
-  // Verified against react-native/Libraries/Blob/Blob.js +
-  // BlobManager.js's createFromParts: this constructor form is supported
-  // and sets .type directly from the passed option.
-  const typedBlob = new Blob([photo.blob], { type: photo.mimeType });
-
-  // No contentType option passed to uploadEvidenceFn — verified against
-  // the installed @supabase/storage-js@2.108.2 source (StorageFileApi.ts):
-  // for a Blob body, that FileOption is never read; the actual stored
-  // Content-Type is determined entirely by the Blob's own .type at
-  // multipart-encoding time, which typedBlob above has already fixed.
-  const { error } = await uploadEvidenceFn({ path, blob: typedBlob });
+  // The stored Content-Type is always the trusted, picker-provided
+  // mimeType (already validated above) — never inferred from the bytes or
+  // from any native fetch/blob layer. For a raw ArrayBuffer body the
+  // installed @supabase/storage-js@2.108.2 (StorageFileApi.ts) sends the
+  // contentType option as the request's content-type header.
+  const { error } = await uploadEvidenceFn({
+    path,
+    bytes:       photo.bytes,
+    contentType: photo.mimeType,
+  });
 
   const classified = classifyAndApplyUploadResult(state, error);
   return { kind: classified.kind, state: classified.state };

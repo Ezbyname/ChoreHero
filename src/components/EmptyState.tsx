@@ -29,7 +29,8 @@ const styles = StyleSheet.create({
   },
   message: {
     ...typography.body,
-    color:     colors.textMuted,
-    textAlign: 'center',
+    color:             colors.textSecondary,
+    textAlign:         'center',
+    paddingHorizontal: spacing.xl,
   },
 });

@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { FormScreen } from '@/components/ui/FormScreen';
+import { TextField } from '@/components/ui/TextField';
 import { createHouseholdWithOwner, redeemHouseholdInvite } from '@/lib/repositories';
 import { selectAuthUser, selectCurrentUser } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
-import { colors, spacing, typography } from '@/theme';
+import { colors, radius, shadows, typography } from '@/theme';
 import { copy } from '@/content/copy';
 
 type Mode = 'create' | 'join';
@@ -152,230 +150,116 @@ export function HouseholdSetupScreen() {
 
   const isSubmitting = createSubmitting || joinSubmitting;
 
+  const isCreate = mode === 'create';
+
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-
-        {/* Tab toggle */}
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, mode === 'create' && styles.tabActive]}
-            onPress={() => switchMode('create')}
+    <FormScreen
+      title={isCreate ? copy.householdSetup.title : copy.householdJoin.title}
+      subtitle={isCreate ? copy.householdSetup.body : copy.householdJoin.body}
+      hero={<Text style={styles.hero}>🏡</Text>}
+    >
+      {/* Create / Join switch */}
+      <View style={styles.tabs} accessibilityRole="tablist">
+        {(['create', 'join'] as const).map((m) => (
+          <Pressable
+            key={m}
+            style={[styles.tab, mode === m && styles.tabActive]}
+            onPress={() => switchMode(m)}
             disabled={isSubmitting}
-            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: mode === m, disabled: isSubmitting }}
           >
-            <Text style={[styles.tabText, mode === 'create' && styles.tabTextActive]}>
-              {copy.householdJoin.tabCreate}
+            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
+              {m === 'create' ? copy.householdJoin.tabCreate : copy.householdJoin.tabJoin}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, mode === 'join' && styles.tabActive]}
-            onPress={() => switchMode('join')}
-            disabled={isSubmitting}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, mode === 'join' && styles.tabTextActive]}>
-              {copy.householdJoin.tabJoin}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Create mode */}
-        {mode === 'create' && (
-          <>
-            <Text style={styles.title}>{copy.householdSetup.title}</Text>
-            <Text style={styles.body}>{copy.householdSetup.body}</Text>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>{copy.householdSetup.fieldLabel}</Text>
-              <TextInput
-                style={[styles.input, createValidation ? styles.inputError : null]}
-                value={householdName}
-                onChangeText={(text: string) => {
-                  setHouseholdName(text);
-                  if (createValidation) setCreateValidation(null);
-                }}
-                placeholder={copy.householdSetup.fieldPlaceholder}
-                placeholderTextColor={colors.textMuted}
-                autoFocus
-                autoCapitalize="words"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleCreate}
-                editable={!createSubmitting}
-              />
-              {createValidation ? (
-                <Text style={styles.validationText}>{createValidation}</Text>
-              ) : null}
-            </View>
-
-            {createError ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{createError}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.button, createSubmitting && styles.buttonDisabled]}
-              onPress={handleCreate}
-              disabled={createSubmitting}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>
-                {createSubmitting
-                  ? copy.householdSetup.buttonLoading
-                  : copy.householdSetup.button}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* Join mode */}
-        {mode === 'join' && (
-          <>
-            <Text style={styles.title}>{copy.householdJoin.title}</Text>
-            <Text style={styles.body}>{copy.householdJoin.body}</Text>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>{copy.householdJoin.fieldLabel}</Text>
-              <TextInput
-                style={[styles.input, joinValidation ? styles.inputError : null]}
-                value={householdCode}
-                onChangeText={(text: string) => {
-                  setHouseholdCode(text);
-                  if (joinValidation) setJoinValidation(null);
-                }}
-                placeholder={copy.householdJoin.fieldPlaceholder}
-                placeholderTextColor={colors.textMuted}
-                autoFocus
-                autoCapitalize="characters"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleJoin}
-                editable={!joinSubmitting}
-              />
-              {joinValidation ? (
-                <Text style={styles.validationText}>{joinValidation}</Text>
-              ) : null}
-            </View>
-
-            {joinError ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{joinError}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.button, joinSubmitting && styles.buttonDisabled]}
-              onPress={handleJoin}
-              disabled={joinSubmitting}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>
-                {joinSubmitting
-                  ? copy.householdJoin.buttonLoading
-                  : copy.householdJoin.button}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-
+          </Pressable>
+        ))}
       </View>
-    </View>
+
+      {isCreate ? (
+        <>
+          <TextField
+            label={copy.householdSetup.fieldLabel}
+            value={householdName}
+            onChangeText={(text: string) => {
+              setHouseholdName(text);
+              if (createValidation) setCreateValidation(null);
+            }}
+            placeholder={copy.householdSetup.fieldPlaceholder}
+            autoFocus
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleCreate}
+            editable={!createSubmitting}
+            error={createValidation}
+          />
+          {createError ? <Banner tone="danger" text={createError} /> : null}
+          <AppButton
+            label={copy.householdSetup.button}
+            onPress={() => { void handleCreate(); }}
+            busy={createSubmitting}
+            busyLabel={copy.householdSetup.buttonLoading}
+          />
+        </>
+      ) : (
+        <>
+          <TextField
+            label={copy.householdJoin.fieldLabel}
+            value={householdCode}
+            onChangeText={(text: string) => {
+              setHouseholdCode(text);
+              if (joinValidation) setJoinValidation(null);
+            }}
+            placeholder={copy.householdJoin.fieldPlaceholder}
+            autoFocus
+            autoCapitalize="characters"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleJoin}
+            editable={!joinSubmitting}
+            error={joinValidation}
+          />
+          {joinError ? <Banner tone="danger" text={joinError} /> : null}
+          <AppButton
+            label={copy.householdJoin.button}
+            onPress={() => { void handleJoin(); }}
+            busy={joinSubmitting}
+            busyLabel={copy.householdJoin.buttonLoading}
+          />
+        </>
+      )}
+    </FormScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex:              1,
-    backgroundColor:   colors.background,
-    justifyContent:    'center',
-    paddingHorizontal: spacing.xl,
-  },
-  content: {
-    gap: spacing.md,
+  hero: {
+    fontSize: 48,
   },
   tabs: {
-    flexDirection:  'row',
-    borderRadius:   10,
-    backgroundColor: colors.surface,
-    padding:        4,
-    marginBottom:   spacing.sm,
+    flexDirection:   'row',
+    borderRadius:    radius.md,
+    backgroundColor: colors.surfaceMuted,
+    padding:         4,
+    gap:             4,
   },
   tab: {
-    flex:            1,
-    paddingVertical: spacing.sm,
-    alignItems:      'center',
-    borderRadius:    8,
+    flex:           1,
+    minHeight:      44,
+    borderRadius:   radius.sm,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
   tabActive: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   tabText: {
-    ...typography.caption,
-    color:      colors.textMuted,
-    fontWeight: '600',
+    ...typography.label,
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: colors.textPrimary,
-  },
-  title: {
-    ...typography.heading,
-    color:        colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  body: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  fieldGroup: {
-    gap: spacing.xs,
-  },
-  label: {
-    ...typography.caption,
-    color:      colors.textMuted,
-    fontWeight: '600',
-  },
-  input: {
-    ...typography.body,
-    color:             colors.textPrimary,
-    backgroundColor:   colors.surface,
-    borderWidth:       1,
-    borderColor:       colors.borderSoft,
-    borderRadius:      10,
-    paddingHorizontal: spacing.lg,
-    paddingVertical:   spacing.md,
-  },
-  inputError: {
-    borderColor: '#B91C1C',
-  },
-  validationText: {
-    ...typography.caption,
-    color: '#B91C1C',
-  },
-  errorBox: {
-    backgroundColor: '#FEE2E2',
-    borderRadius:    8,
-    padding:         spacing.md,
-  },
-  errorText: {
-    ...typography.caption,
-    color: '#B91C1C',
-  },
-  button: {
-    backgroundColor: colors.primary ?? colors.textPrimary,
-    borderRadius:    10,
-    paddingVertical: spacing.md,
-    alignItems:      'center',
-    marginTop:       spacing.sm,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    ...typography.body,
-    color:      '#FFFFFF',
-    fontWeight: '600',
+    color: colors.primary,
   },
 });

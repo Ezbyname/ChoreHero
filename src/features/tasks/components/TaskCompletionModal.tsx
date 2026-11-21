@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useRef, useState } from 'react';
@@ -5,39 +6,48 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppButton } from '@/components/ui/AppButton';
+import { Banner } from '@/components/ui/Banner';
+import { IconButton } from '@/components/ui/IconButton';
+import { SheetHeader } from '@/components/ui/SheetHeader';
+import { ChildSubmitEvidence } from '@/features/tasks/components/ChildSubmitEvidence';
 import { copy } from '@/content/copy';
-import { submitTaskCompletionWithEvidence } from '@/features/tasks/requestTaskCompletionWithEvidence';
+import { formatCopy } from '@/content/formatCopy';
+import { beginCompletionSubmit, finishCompletionSubmit } from '@/features/tasks/components/taskCompletionSubmitFlow';
 import { validateEvidenceMimeType } from '@/features/tasks/taskCompletionAttempt';
-import { colors, radius, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, typography } from '@/theme';
+import type { TaskCompletionSubmissionRow } from '@/types/supabase';
 import {
   INITIAL_UI_STATE,
+  MAX_EVIDENCE_PHOTOS,
+  canAddPhotos,
+  canSubmit,
   isTerminalPhase,
-  onBeginNoPhotoSubmit,
-  onBeginPhotoSubmit,
   onCameraPermissionDenied,
-  onLocalPhotoReadFailed,
-  onPhotoRemoved,
-  onPhotoSelected,
+  onPhotoRemovedAt,
+  onPhotoReplacedAt,
+  onPhotosAdded,
   onPickerFailed,
   onSubmitInvalidMime,
-  onSubmitRetryableFailed,
-  onSubmitSuccess,
-  onSubmitTerminalNotAuthorized,
-  onSubmitTerminalNotOpen,
-  onSubmitUncertain,
-  onSubmitUnexpectedFailure,
+  onSubmitProgress,
+  photoCountLabel,
+  remainingPhotoSlots,
+  type PhotoSource,
+  type SelectedPhoto,
   type TaskCompletionUiState,
   type UiErrorKind,
 } from '@/features/tasks/components/taskCompletionUiState';
 
-// expo-crypto randomUUID: native-backed, Web-platform fallback included.
-// Same convention as RewardCard.tsx — kept inline in this native-only
-// file so the Node-run tests of taskCompletionUiState never import it.
+// expo-crypto randomUUID: native-backed. Kept inline in this native-only
+// file so the Node-run tests of the pure modules never import it.
 function generateId(): string {
   return Crypto.randomUUID();
 }
@@ -50,249 +60,286 @@ export type TaskCompletionModalTask = {
 
 type Props = {
   task:        TaskCompletionModalTask | null;
-  onCompleted: () => void;
+  // Optional one-line context shown above the body, e.g. after the child
+  // took back a pending completion to change its photos.
+  notice?:     string | null;
+  // Called only after the server confirmed the submission.
+  onCompleted: (submission: TaskCompletionSubmissionRow | null) => void;
   onClose:     () => void;
+  // Slice 5C: 'child' renders the same flow as the full-screen child Submit
+  // Evidence screen (Board 20) and shows "Sent!" after a confirmed
+  // submission. Omitted = the existing bottom sheet, unchanged (adults).
+  variant?:     'sheet' | 'child';
+  missionCard?: React.ReactNode;
+  // Child only: "Back to missions" on the "Sent!" screen.
+  onSentDone?:  () => void;
 };
 
-export function TaskCompletionModal({ task, onCompleted, onClose }: Props) {
-  const [state, setState] = useState<TaskCompletionUiState>(INITIAL_UI_STATE);
-  const inFlightRef = useRef(false);
+// Picker assets -> accepted photos (allowed MIME only). A disallowed type
+// is reported, never uploaded.
+function toPhotos(result: ImagePicker.ImagePickerResult, source: PhotoSource): { photos: SelectedPhoto[]; invalid: boolean } {
+  if (result.canceled || !result.assets) return { photos: [], invalid: false };
+  const photos: SelectedPhoto[] = [];
+  let invalid = false;
+  for (const asset of result.assets) {
+    const mime = asset.mimeType ?? '';
+    if (validateEvidenceMimeType(mime) === 'ok') photos.push({ previewUri: asset.uri, mimeType: mime, source });
+    else invalid = true;
+  }
+  return { photos, invalid };
+}
 
-  // Reset UI state whenever the Modal closes/reopens. This guarantees a
-  // fresh initial-state (no stale photo, no stale attempt) between tasks.
+export function TaskCompletionModal({ task, notice, onCompleted, onClose, variant = 'sheet', missionCard, onSentDone }: Props) {
+  const [state, setState] = useState<TaskCompletionUiState>(INITIAL_UI_STATE);
+  // Child only: the task just confirmed by the server, kept for "Sent!"
+  // after the parent has already closed the flow (task === null).
+  const [sentTask, setSentTask] = useState<TaskCompletionModalTask | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const inFlightRef = useRef(false);
+  const { height: windowHeight } = useWindowDimensions();
+
+  // Fresh state between tasks: no stale photos, no stale attempt.
   React.useEffect(() => {
-    if (task === null) setState(INITIAL_UI_STATE);
+    if (task === null) {
+      setState(INITIAL_UI_STATE);
+      setPreviewIndex(null);
+    }
   }, [task]);
 
-  const isSubmitting = state.phase === 'submitting';
-  const isTerminal   = isTerminalPhase(state);
-  const isOpen       = task !== null;
-  // Any user-initiated action other than Cancel/Close is blocked when the
-  // Modal is mid-submission OR has entered a terminal rejection
-  // (not_open / not_authorized). Those terminal states are non-retryable
-  // for the current logical attempt — Cancel/Close is the only way out.
-  const actionsDisabled = isSubmitting || isTerminal;
+  const isSubmitting  = state.phase === 'submitting';
+  const isTerminal    = isTerminalPhase(state);
+  const isOpen        = task !== null;
+  const addEnabled    = canAddPhotos(state);
+  const editDisabled  = isSubmitting || isTerminal;
+  const submitEnabled = canSubmit(state);
 
-  // Validate a picker result and transition. Returns true if a photo was
-  // accepted; false if invalid MIME or user cancelled.
-  function acceptPickerResult(result: ImagePicker.ImagePickerResult): boolean {
-    if (result.canceled || !result.assets?.[0]) return false;
-    const asset = result.assets[0];
-    const mime  = asset.mimeType ?? '';
-    if (validateEvidenceMimeType(mime) !== 'ok') {
-      setState(s => onSubmitInvalidMime(s));
-      return false;
+  function accept(result: ImagePicker.ImagePickerResult, source: PhotoSource, replaceIndex: number | null) {
+    const { photos, invalid } = toPhotos(result, source);
+    if (photos.length > 0) {
+      setState((s) => (replaceIndex === null
+        ? onPhotosAdded(s, photos, generateId)
+        : onPhotoReplacedAt(s, replaceIndex, photos[0], generateId)));
     }
-    setState(s => onPhotoSelected(s, { previewUri: asset.uri, mimeType: mime }, generateId));
-    return true;
+    if (invalid) setState((s) => onSubmitInvalidMime(s));
   }
 
-  async function handleTakePhoto() {
-    if (actionsDisabled) return;
-    // Camera requires permission. Permission denial does NOT mint an
-    // attempt — the state module records only the error. A thrown
-    // exception from either call is caught below and routed through
-    // onPickerFailed, which preserves any already-selected photo and the
-    // existing logical attempt verbatim — no new ids are ever minted on
-    // a picker failure.
+  async function pickFromCamera(replaceIndex: number | null = null) {
+    if (editDisabled || (replaceIndex === null && !addEnabled)) return;
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        setState(s => onCameraPermissionDenied(s));
+        setState((s) => onCameraPermissionDenied(s));
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-      acceptPickerResult(result);
+      accept(await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 }), 'camera', replaceIndex);
     } catch {
-      setState(s => onPickerFailed(s));
+      setState((s) => onPickerFailed(s));
     }
   }
 
-  async function handleChooseGallery() {
-    if (actionsDisabled) return;
-    // Gallery via the system image picker does NOT require an explicit
-    // media-library permission request on supported modern platforms —
-    // launchImageLibraryAsync handles the system picker directly. User
-    // cancellation returns a `canceled: true` result which
-    // acceptPickerResult treats as a no-op. A genuine thrown exception
-    // (platform error, picker crash) is caught here and routed through
-    // onPickerFailed; that path preserves any existing photo + attempt
-    // (so a mid-replace cancel/exception keeps the original selection).
+  async function pickFromGallery(replaceIndex: number | null = null) {
+    if (editDisabled || (replaceIndex === null && !addEnabled)) return;
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-      acceptPickerResult(result);
+      const limit = replaceIndex === null ? remainingPhotoSlots(state) : 1;
+      accept(await ImagePicker.launchImageLibraryAsync({
+        mediaTypes:              ['images'],
+        quality:                 0.8,
+        allowsMultipleSelection: limit > 1,
+        selectionLimit:          limit,
+      }), 'gallery', replaceIndex);
     } catch {
-      setState(s => onPickerFailed(s));
+      setState((s) => onPickerFailed(s));
     }
   }
 
-  function handleRemovePhoto() {
-    if (actionsDisabled) return;
-    setState(s => onPhotoRemoved(s, generateId));
+  function removeAt(index: number) {
+    if (editDisabled) return;
+    setPreviewIndex(null);
+    setState((s) => onPhotoRemovedAt(s, index, generateId));
   }
 
   async function handleSubmit() {
-    if (!task || actionsDisabled) return;
-    // Defense-in-depth against double-submit: ref guard is set BEFORE any
-    // async work, cleared only in the finally block. The UI disable alone
-    // is a UX hint; this ref is the correctness barrier.
+    if (!task || !submitEnabled) return;
+    // The ref is the correctness barrier against a double tap; the
+    // disabled button is only the visual hint.
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
-      // Begin transition: photo path reuses the existing photo-bearing
-      // attempt (retry identity preserved); no-photo path lazily mints
-      // a fresh no-photo attempt only if one doesn't exist yet.
-      let working: TaskCompletionUiState;
-      if (state.photo) {
-        const begun = onBeginPhotoSubmit(state);
-        if (!begun) return; // defensive: photo present but no attempt
-        working = begun;
-      } else {
-        working = onBeginNoPhotoSubmit(state, generateId);
-      }
+      const working = beginCompletionSubmit(state, generateId);
       setState(working);
-      if (!working.attempt) return; // defensive
-
-      // Build the photo input lazily — bytes are not held in state. A
-      // throw from any of fetch / blob() / arrayBuffer() is scoped to
-      // this inner try so it maps to the LOCAL photo-read failure path
-      // (preserve attempt + photo + ids, child can retry/replace/remove).
-      let photoInput: { blob: Blob; mimeType: string } | null = null;
-      if (state.photo) {
-        try {
-          const response   = await fetch(state.photo.previewUri);
-          const sourceBlob = await response.blob();
-          const bytes      = await sourceBlob.arrayBuffer();
-          const blob       = new Blob([bytes], { type: state.photo.mimeType });
-          photoInput       = { blob, mimeType: state.photo.mimeType };
-        } catch {
-          setState(s => onLocalPhotoReadFailed(s));
-          return;
-        }
-      }
-
-      const result = await submitTaskCompletionWithEvidence(
-        working.attempt,
-        { id: task.id, householdId: task.householdId },
-        photoInput,
-      );
-
-      if (result.ok) {
-        setState(onSubmitSuccess);
-        onCompleted();
-        return;
-      }
-      switch (result.reason) {
-        case 'uncertain':      setState(s => onSubmitUncertain(s, result.state)); break;
-        case 'failed':         setState(s => onSubmitRetryableFailed(s, result.state)); break;
-        case 'not_open':       setState(s => onSubmitTerminalNotOpen(s)); break;
-        case 'not_authorized': setState(s => onSubmitTerminalNotAuthorized(s)); break;
-        case 'invalid_mime':   setState(s => onSubmitInvalidMime(s)); break;
-      }
-    } catch {
-      // Catches anything the orchestration call threw instead of returning
-      // a result shape (unexpected programmer error / unmapped reject).
-      // Local photo-read errors are already handled by the inner try/catch
-      // above and never reach here. Must NOT leave phase='submitting' —
-      // onSubmitUnexpectedFailure drops back to a retryable state and
-      // preserves attempt + ids verbatim.
-      setState(s => onSubmitUnexpectedFailure(s));
+      if (working.phase !== 'submitting') return;
+      const outcome = await finishCompletionSubmit(working, { id: task.id, householdId: task.householdId }, {
+        onProgress: (p) => setState((s) => onSubmitProgress(s, p)),
+      });
+      setState(outcome.state);
+      if (outcome.completed && variant === 'child') setSentTask(task);
+      if (outcome.completed) onCompleted(outcome.submission);
     } finally {
       inFlightRef.current = false;
     }
   }
 
   function handleClose() {
-    if (isSubmitting) return;
+    if (isSubmitting) return; // let the server answer first
     onClose();
+  }
+
+  const progressText = isSubmitting
+    ? (state.progress && state.photos.length > 1
+        ? formatCopy(copy.completionSheet.uploadingPhoto, { i: state.progress.current, n: state.progress.total })
+        : state.photos.length === 1 ? copy.completionSheet.uploadingSingle : copy.completionSheet.submitting)
+    : null;
+  const previewPhoto = previewIndex !== null ? state.photos[previewIndex] : undefined;
+
+  if (variant === 'child') {
+    const shown = task ?? sentTask;
+    const finishSent = () => {
+      setSentTask(null);
+      onSentDone?.();
+    };
+    return (
+      <Modal
+        visible={shown !== null}
+        animationType="slide"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={sentTask && !task ? finishSent : handleClose}>
+        <ChildSubmitEvidence
+          title={shown?.title ?? ''}
+          missionCard={missionCard}
+          notice={notice}
+          state={state}
+          sent={sentTask !== null && task === null}
+          isSubmitting={isSubmitting}
+          editDisabled={editDisabled}
+          addEnabled={addEnabled}
+          submitEnabled={submitEnabled}
+          progressText={progressText}
+          error={state.error ? { text: childFacingErrorCopy(state.error.kind), tone: isTerminal ? 'warning' : 'danger' } : null}
+          onCamera={(i) => { void pickFromCamera(i); }}
+          onGallery={(i) => { void pickFromGallery(i); }}
+          onRemove={removeAt}
+          onSubmit={() => { void handleSubmit(); }}
+          onBack={handleClose}
+          onSentDone={finishSent}
+        />
+      </Modal>
+    );
   }
 
   return (
     <Modal visible={isOpen} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{copy.completionSheet.title}</Text>
-          {task && <Text style={styles.taskTitle} numberOfLines={2}>{task.title}</Text>}
-          <Text style={styles.hint}>{copy.completionSheet.optionalEvidenceHint}</Text>
+        {/* Android edge-to-edge (forced on in Expo SDK 56) draws this
+            window under the navigation bar; SafeAreaView adds that inset so
+            the footer never sits under it. */}
+        <SafeAreaView edges={['bottom']} style={[styles.card, { maxHeight: Math.round(windowHeight * sizes.sheetMaxRatio) }]}>
+          <SheetHeader
+            title={copy.completionSheet.title}
+            subtitle={task?.title}
+            onClose={handleClose}
+            closeLabel={copy.completionSheet.close}
+            closeDisabled={isSubmitting}
+          />
 
-          {state.photo ? (
-            <View>
-              <Image source={{ uri: state.photo.previewUri }} style={styles.preview} resizeMode="cover" />
-              {/* Three replacement affordances: camera, gallery, or remove.
-                  Each success through onPhotoSelected mints a NEW logical
-                  attempt (new clientRequestId + new photoObjectId); each
-                  cancel / exception preserves the current photo + attempt. */}
-              <View style={styles.row}>
-                <TouchableOpacity
-                  onPress={handleTakePhoto}
-                  disabled={actionsDisabled}
-                  style={[styles.btn, styles.secondary, actionsDisabled && styles.disabled]}
-                  accessibilityLabel={copy.completionSheet.takeAnother}>
-                  <Text style={styles.btnTextSecondary}>{copy.completionSheet.takeAnother}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleChooseGallery}
-                  disabled={actionsDisabled}
-                  style={[styles.btn, styles.secondary, actionsDisabled && styles.disabled]}
-                  accessibilityLabel={copy.completionSheet.chooseAnother}>
-                  <Text style={styles.btnTextSecondary}>{copy.completionSheet.chooseAnother}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleRemovePhoto}
-                  disabled={actionsDisabled}
-                  style={[styles.btn, styles.secondary, actionsDisabled && styles.disabled]}
-                  accessibilityLabel={copy.completionSheet.remove}>
-                  <Text style={styles.btnTextSecondary}>{copy.completionSheet.remove}</Text>
-                </TouchableOpacity>
+          <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {notice ? <Banner tone="info" text={notice} /> : null}
+
+            <View style={styles.photosHeader}>
+              <Text style={styles.sectionLabel}>{copy.completionSheet.photosTitle}</Text>
+              <Text style={styles.count} accessibilityLabel={photoCountLabel(state)}>
+                {formatCopy(copy.completionSheet.photoCount, { n: state.photos.length, max: MAX_EVIDENCE_PHOTOS })}
+              </Text>
+            </View>
+            <Text style={styles.hint}>{formatCopy(copy.completionSheet.addPhotosHint, { max: MAX_EVIDENCE_PHOTOS })}</Text>
+
+            {state.photos.length > 0 && (
+              <View style={styles.grid}>
+                {state.photos.map((p, i) => (
+                  <View key={`${p.previewUri}-${i}`} style={styles.thumbWrap}>
+                    <Pressable
+                      onPress={() => setPreviewIndex(i)}
+                      style={styles.thumb}
+                      accessibilityRole="imagebutton"
+                      accessibilityLabel={formatCopy(copy.completionSheet.previewPhotoA11y, { i: i + 1 })}>
+                      <Image source={{ uri: p.previewUri }} style={styles.thumbImage} resizeMode="cover" resizeMethod="resize" />
+                    </Pressable>
+                    {!editDisabled && (
+                      <Pressable
+                        onPress={() => removeAt(i)}
+                        hitSlop={10}
+                        style={styles.removeBadge}
+                        accessibilityRole="button"
+                        accessibilityLabel={formatCopy(copy.completionSheet.removePhotoA11y, { i: i + 1 })}>
+                        <Ionicons name="close" size={14} color={colors.textOnColor} />
+                      </Pressable>
+                    )}
+                  </View>
+                ))}
               </View>
-            </View>
-          ) : (
-            <View style={styles.row}>
-              <TouchableOpacity
-                onPress={handleTakePhoto}
-                disabled={actionsDisabled}
-                style={[styles.btn, styles.secondary, actionsDisabled && styles.disabled]}
-                accessibilityLabel={copy.completionSheet.takePhoto}>
-                <Text style={styles.btnTextSecondary}>{copy.completionSheet.takePhoto}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleChooseGallery}
-                disabled={actionsDisabled}
-                style={[styles.btn, styles.secondary, actionsDisabled && styles.disabled]}
-                accessibilityLabel={copy.completionSheet.chooseFromGallery}>
-                <Text style={styles.btnTextSecondary}>{copy.completionSheet.chooseFromGallery}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            )}
 
-          {state.error && (
-            <Text style={styles.error}>{childFacingErrorCopy(state.error.kind)}</Text>
-          )}
+            {addEnabled ? (
+              <View style={styles.row}>
+                <AppButton label={copy.completionSheet.addCamera} icon="camera-outline" variant="secondary"
+                  onPress={() => { void pickFromCamera(); }} style={styles.flex} />
+                <AppButton label={copy.completionSheet.addGallery} icon="images-outline" variant="secondary"
+                  onPress={() => { void pickFromGallery(); }} style={styles.flex} />
+              </View>
+            ) : state.photos.length >= MAX_EVIDENCE_PHOTOS && !editDisabled ? (
+              <Text style={styles.hint}>{formatCopy(copy.completionSheet.maxReached, { max: MAX_EVIDENCE_PHOTOS })}</Text>
+            ) : null}
+          </ScrollView>
 
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={actionsDisabled}
-            style={[styles.btn, styles.primary, actionsDisabled && styles.disabled]}
-            accessibilityLabel={copy.completionSheet.submit}>
-            {isSubmitting
-              ? <ActivityIndicator color={colors.surface} />
-              : <Text style={styles.btnTextPrimary}>{copy.completionSheet.submit}</Text>}
-          </TouchableOpacity>
-
-          {/* Cancel / Close is intentionally NOT gated on actionsDisabled —
-              from a terminal (not_open / not_authorized) rejection, Cancel
-              is the child's only way out of the Modal. It is only gated
-              against isSubmitting so a close mid-flight doesn't orphan the
-              in-flight orchestration call. */}
-          <TouchableOpacity
-            onPress={handleClose}
-            disabled={isSubmitting}
-            style={styles.cancelLink}
-            accessibilityLabel={copy.completionSheet.cancel}>
-            <Text style={styles.cancelLinkText}>{copy.completionSheet.cancel}</Text>
-          </TouchableOpacity>
-        </View>
+          {/* Footer outside the ScrollView: error, progress and Submit are
+              always on screen, however many photos there are. */}
+          <View style={styles.footer}>
+            {state.error && !isSubmitting && (
+              <Banner tone={isTerminal ? 'warning' : 'danger'} text={childFacingErrorCopy(state.error.kind)} />
+            )}
+            {progressText && (
+              <View style={styles.progressRow} accessibilityLiveRegion="polite">
+                <ActivityIndicator color={colors.primary} />
+                <View style={styles.flex}>
+                  <Text style={styles.progressText}>{progressText}</Text>
+                  <Text style={styles.hint}>{copy.completionSheet.keepOpenHint}</Text>
+                </View>
+              </View>
+            )}
+            <AppButton
+              label={copy.completionSheet.submit}
+              onPress={() => { void handleSubmit(); }}
+              disabled={!submitEnabled}
+              busy={isSubmitting}
+              busyLabel={progressText ?? copy.completionSheet.submitting}
+            />
+            <AppButton label={copy.completionSheet.cancel} variant="ghost" onPress={handleClose} disabled={isSubmitting} />
+          </View>
+        </SafeAreaView>
       </View>
+
+      {/* Large preview of one selected photo, with replace / remove. */}
+      <Modal visible={previewPhoto !== undefined} transparent={false} animationType="fade" onRequestClose={() => setPreviewIndex(null)}>
+        <SafeAreaView style={styles.viewer}>
+          <View style={styles.viewerTop}>
+            <Text style={styles.viewerTitle}>
+              {previewIndex !== null ? `${previewIndex + 1} / ${state.photos.length}` : ''}
+            </Text>
+            <IconButton icon="close" tone="onDark" accessibilityLabel={copy.completionSheet.close} onPress={() => setPreviewIndex(null)} />
+          </View>
+          {previewPhoto && <Image source={{ uri: previewPhoto.previewUri }} style={styles.viewerImage} resizeMode="contain" resizeMethod="resize" />}
+          {previewIndex !== null && !editDisabled && (
+            <View style={styles.viewerActions}>
+              <AppButton label={copy.completionSheet.replaceWithCamera} icon="camera-outline" variant="secondary" compact style={styles.flex}
+                onPress={() => { const i = previewIndex; setPreviewIndex(null); void pickFromCamera(i); }} />
+              <AppButton label={copy.completionSheet.replaceWithGallery} icon="images-outline" variant="secondary" compact style={styles.flex}
+                onPress={() => { const i = previewIndex; setPreviewIndex(null); void pickFromGallery(i); }} />
+              <AppButton label={copy.completionSheet.remove} icon="trash-outline" variant="dangerOutline" compact style={styles.flex}
+                onPress={() => removeAt(previewIndex)} />
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </Modal>
   );
 }
@@ -308,83 +355,126 @@ function childFacingErrorCopy(kind: UiErrorKind): string {
     case 'not_open':                 return copy.completionSheet.errorNotOpen;
     case 'not_authorized':           return copy.completionSheet.errorNotAuthorized;
     case 'camera_permission_denied': return copy.completionSheet.errorCameraPermissionDenied;
+    case 'attempt_rejected':         return copy.completionSheet.errorAttemptRejected;
+    case 'too_many_photos':          return formatCopy(copy.completionSheet.errorTooManyPhotos, { max: MAX_EVIDENCE_PHOTOS });
   }
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    flex:             1,
-    backgroundColor:  'rgba(0,0,0,0.5)',
-    justifyContent:   'flex-end',
+    flex:            1,
+    backgroundColor: colors.overlay,
+    justifyContent:  'flex-end',
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor:      colors.surface,
     borderTopLeftRadius:  radius.xl,
     borderTopRightRadius: radius.xl,
-    padding:         spacing.xl,
-    gap:             spacing.md,
+    padding:              spacing.xl,
+    gap:                  spacing.md,
   },
-  title: {
-    ...typography.title,
+  // flexShrink lets the body give up height to the footer once the sheet
+  // reaches its maxHeight; flexGrow 0 keeps short content from stretching.
+  body: {
+    flexGrow:   0,
+    flexShrink: 1,
+  },
+  bodyContent: {
+    gap: spacing.md,
+  },
+  footer: {
+    gap: spacing.sm,
+  },
+  photosHeader: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+  },
+  sectionLabel: {
+    ...typography.bodyStrong,
     color: colors.textPrimary,
   },
-  taskTitle: {
-    ...typography.body,
-    color:        colors.textPrimary,
-    fontWeight:   '600',
+  count: {
+    ...typography.label,
+    color: colors.textSecondary,
   },
   hint: {
     ...typography.caption,
-    color:        colors.textSecondary,
+    color: colors.textSecondary,
   },
-  preview: {
-    width:        '100%',
-    aspectRatio:  1,
-    borderRadius: radius.md,
-    backgroundColor: colors.borderSoft,
-    marginVertical:  spacing.sm,
+  grid: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           spacing.sm,
+  },
+  thumbWrap: {
+    width:  84,
+    height: 84,
+  },
+  thumb: {
+    width:           '100%',
+    height:          '100%',
+    borderRadius:    radius.md,
+    overflow:        'hidden',
+    backgroundColor: colors.surfaceMuted,
+  },
+  thumbImage: {
+    width:  '100%',
+    height: '100%',
+  },
+  removeBadge: {
+    position:        'absolute',
+    top:             -6,
+    right:           -6,
+    width:           26,
+    height:          26,
+    borderRadius:    13,
+    backgroundColor: colors.textPrimary,
+    borderWidth:     2,
+    borderColor:     colors.surface,
+    alignItems:      'center',
+    justifyContent:  'center',
   },
   row: {
     flexDirection: 'row',
     gap:           spacing.sm,
   },
-  btn: {
-    flex:           1,
-    paddingVertical:   spacing.md,
+  flex: {
+    flex: 1,
+  },
+  progressRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               spacing.md,
+    backgroundColor:   colors.primarySoft,
+    borderRadius:      radius.md,
+    padding:           spacing.md,
+  },
+  progressText: {
+    ...typography.bodyStrong,
+    color: colors.textPrimary,
+  },
+  viewer: {
+    flex:            1,
+    backgroundColor: colors.viewer,
+  },
+  viewerTop: {
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
     paddingHorizontal: spacing.lg,
-    borderRadius:   radius.md,
-    alignItems:     'center',
-    justifyContent: 'center',
+    paddingVertical:   spacing.sm,
   },
-  primary: {
-    backgroundColor: colors.primary,
+  viewerTitle: {
+    ...typography.bodyStrong,
+    color: colors.textOnColor,
   },
-  secondary: {
-    backgroundColor: colors.borderSoft,
+  viewerImage: {
+    flex: 1,
   },
-  disabled: {
-    opacity: 0.6,
-  },
-  btnTextPrimary: {
-    ...typography.body,
-    color:      colors.surface,
-    fontWeight: '600',
-  },
-  btnTextSecondary: {
-    ...typography.body,
-    color:      colors.textPrimary,
-    fontWeight: '500',
-  },
-  error: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  cancelLink: {
-    alignItems: 'center',
-    padding:    spacing.sm,
-  },
-  cancelLinkText: {
-    ...typography.body,
-    color: colors.textMuted,
+  viewerActions: {
+    flexDirection: 'row',
+    gap:           spacing.sm,
+    padding:       spacing.lg,
   },
 });

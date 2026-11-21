@@ -1,5 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Banner } from '@/components/ui/Banner';
+import { LoadingView } from '@/components/ui/LoadingView';
+import { copy } from '@/content/copy';
 import { supabaseConfigStatus } from '@/lib/supabaseConfig';
 import { AuthStack } from '@/navigation/AuthStack';
 import { AuthenticatedAppGate } from '@/navigation/AuthenticatedAppGate';
@@ -11,7 +14,7 @@ import {
   selectIsAuthLoading,
 } from '@/store/selectors';
 import { useAppStore } from '@/store/useAppStore';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 /**
  * Pure rendering component — no effects, no store writes, no Supabase calls.
@@ -42,12 +45,11 @@ export function AuthGate() {
 
   // 2. Waiting for Supabase INITIAL_SESSION event.
   if (!isAuthResolved || isAuthLoading) {
+    if (!authError) return <LoadingView message={copy.startup.loading} />;
     return (
       <View style={styles.loading}>
-        <Text style={styles.loadingText}>Getting ChoreHero ready…</Text>
-        {authError ? (
-          <Text style={styles.errorText}>{authError}</Text>
-        ) : null}
+        <LoadingView message={copy.startup.loading} />
+        <View style={styles.banner}><Banner tone="warning" text={authError} /></View>
       </View>
     );
   }
@@ -64,21 +66,11 @@ export function AuthGate() {
 
 const styles = StyleSheet.create({
   loading: {
-    flex:              1,
-    alignItems:        'center',
-    justifyContent:    'center',
-    backgroundColor:   colors.background,
+    flex:            1,
+    backgroundColor: colors.background,
+  },
+  banner: {
     paddingHorizontal: spacing.xl,
-  },
-  loadingText: {
-    ...typography.body,
-    color:     colors.textMuted,
-    textAlign: 'center',
-  },
-  errorText: {
-    ...typography.caption,
-    color:     colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+    paddingBottom:     spacing.xxl,
   },
 });

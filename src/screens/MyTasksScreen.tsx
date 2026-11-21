@@ -1,16 +1,23 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityList } from '@/components/ActivityList';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { Banner } from '@/components/ui/Banner';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { copy } from '@/content/copy';
+import { appSounds } from '@/features/sounds/appSounds';
+import { requestHouseholdRefresh } from '@/features/sync/householdRefresh';
 import { TaskAdapter } from '@/domain/adapters';
 import type { ActivityAction, FamilyActivity } from '@/domain/familyActivity';
 import { claimOpenTask } from '@/features/tasks/claimOpenTask';
 import { completeTask } from '@/features/tasks/completeTask';
+import { PendingCompletionModal, type PendingCompletionModalTask } from '@/features/tasks/components/PendingCompletionModal';
 import { TaskCompletionModal, type TaskCompletionModalTask } from '@/features/tasks/components/TaskCompletionModal';
 import { getTasksForUser } from '@/features/tasks/taskFilters';
+import { applyViewerTaskActions } from '@/features/tasks/taskViewerActions';
+import { useHouseholdRefreshControl } from '@/features/sync/useHouseholdRefreshControl';
 import { useAppStore } from '@/store/useAppStore';
 import {
   selectCanApproveTaskCompletion,
@@ -19,9 +26,12 @@ import {
   selectCurrentUser,
   selectTasks,
 } from '@/store/selectors';
-import { colors, spacing, typography } from '@/theme';
+import { spacing } from '@/theme';
 
-export function MyTasksScreen() {
+// headerAccessory: optional navigation slot passed in by the tab shell (Slice 4).
+// The screen itself never navigates.
+export function MyTasksScreen({ headerAccessory }: { headerAccessory?: React.ReactNode } = {}) {
+  const refreshControl = useHouseholdRefreshControl();
   const tasks     = useAppStore(selectTasks);
   const user      = useAppStore(selectCurrentUser);
   const household = useAppStore(selectCurrentHousehold);
@@ -38,13 +48,13 @@ export function MyTasksScreen() {
   // the current user is their OWN pending submission here, never someone
   // else's — approve/decline must never show to a non-privileged viewer
   // of their own submission (a child cannot approve their own work).
+  // A child's own waiting task gets 'manage_completion' instead (see
+  // applyViewerTaskActions).
   const myActivities = useMemo(
     () => myTasks.map(TaskAdapter.toFamilyActivity).map((activity) =>
-      canApproveTaskCompletion
-        ? activity
-        : { ...activity, availableActions: activity.availableActions.filter((a) => a !== 'approve' && a !== 'decline') },
+      applyViewerTaskActions(activity, { canApproveTaskCompletion, viewerId: user?.id ?? null, role }),
     ),
-    [myTasks, canApproveTaskCompletion],
+    [myTasks, canApproveTaskCompletion, user, role],
   );
 
   const [pendingActivityId, setPendingActivityId] = useState<string | null>(null);
@@ -54,7 +64,12 @@ export function MyTasksScreen() {
   // the legacy v1 requestTaskCompletion path — the Modal drives the
   // approved V2 orchestration (upload + request_task_completion_v2).
   const [completionTarget, setCompletionTarget] = useState<TaskCompletionModalTask | null>(null);
-  const requestAppDataHydrationRetry = useAppStore((s) => s.requestAppDataHydrationRetry);
+  const [completionNotice, setCompletionNotice] = useState<string | null>(null);
+  // Target of the child's "waiting for review" sheet (Add/Change photos,
+  // Cancel completion). null when closed. Both sheets are hosted by THIS
+  // screen and nothing in their flows navigates or re-hydrates, so after
+  // Cancel / Change photos the child is still on My Tasks.
+  const [pendingTarget, setPendingTarget] = useState<PendingCompletionModalTask | null>(null);
 
   // 'claim'/'complete' branching mirrors TodayScreen's handleTaskAction —
   // see that function's own comment for why 'complete' routes by role
@@ -64,6 +79,12 @@ export function MyTasksScreen() {
   // screen) never actually produces a 'claim' action from the adapter.
   async function handleTaskAction(activity: FamilyActivity, action: ActivityAction) {
     if (pendingActivityId || !household || !user) return;
+    if (action === 'manage_completion') {
+      // No backend call here — the sheet loads the pending submission and
+      // owns the withdraw.
+      setPendingTarget({ id: activity.id, householdId: household.id, title: activity.title });
+      return;
+    }
     if (action !== 'claim' && action !== 'complete') return;
 
     setPendingActivityId(activity.id);
@@ -121,16 +142,22 @@ export function MyTasksScreen() {
       <ScreenHeader
         title={copy.screens.myTasks.title}
         subtitle={copy.screens.myTasks.subtitle}
+        accessory={headerAccessory}
       />
 
       {myTasks.length === 0 ? (
-        <EmptyState message={copy.emptyStates.myTasks} emoji="✅" />
+        // Scrollable even when empty: pull-to-refresh is how a child with
+        // no tasks yet can fetch one an adult just created.
+        <ScrollView contentContainerStyle={styles.emptyScroll} refreshControl={refreshControl}>
+          <EmptyState message={copy.emptyStates.myTasks} emoji="✅" />
+        </ScrollView>
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.list}
+          refreshControl={refreshControl}
         >
-          <Text style={styles.summary}>{copy.myTasks.summary}</Text>
+          <SectionHeader title={copy.screens.myTasks.title} count={myTasks.length} hint={copy.myTasks.summary} />
 
           <ActivityList
             activities={myActivities}
@@ -138,20 +165,39 @@ export function MyTasksScreen() {
             onAction={handleTaskAction}
             pendingActivityId={pendingActivityId}
           />
-          {feedback && <Text style={styles.feedback}>{feedback}</Text>}
+          {feedback && <View style={styles.feedback}><Banner tone="danger" text={feedback} /></View>}
         </ScrollView>
       )}
 
+      <PendingCompletionModal
+        task={pendingTarget}
+        role={role}
+        onReopenForPhoto={(task) => {
+          // Withdrawn on the server; the task is open. The completion
+          // Modal starts a NEW logical attempt (fresh ids at selection).
+          setPendingTarget(null);
+          setCompletionNotice(copy.completionSheet.resendNotice);
+          setCompletionTarget(task);
+        }}
+        onClose={() => setPendingTarget(null)}
+      />
+
       <TaskCompletionModal
         task={completionTarget}
-        onCompleted={() => {
+        notice={completionNotice}
+        onCompleted={(submission) => {
+          if (submission) appSounds.play('completion_submitted', submission.id);
           setCompletionTarget(null);
-          // Re-run hydration so the task's new needs_attention status +
-          // the new pending submission are reflected in the UI. Same
-          // pattern as ProfileSetupScreen's post-create refresh.
-          requestAppDataHydrationRetry();
+          setCompletionNotice(null);
+          // Background refresh only: the card turns into "Waiting for
+          // review" right here. A full re-hydration used to replace the
+          // whole app with the loading screen and land the child on Today.
+          requestHouseholdRefresh('mutation');
         }}
-        onClose={() => setCompletionTarget(null)}
+        onClose={() => {
+          setCompletionTarget(null);
+          setCompletionNotice(null);
+        }}
       />
     </Screen>
   );
@@ -165,14 +211,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom:     spacing.xxxl,
   },
-  summary: {
-    ...typography.body,
-    color:        colors.textSecondary,
-    marginBottom: spacing.lg,
+  emptyScroll: {
+    flexGrow: 1,
   },
   feedback: {
-    ...typography.caption,
-    color:     colors.textMuted,
     marginTop: spacing.sm,
   },
 });

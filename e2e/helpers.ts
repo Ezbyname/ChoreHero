@@ -44,8 +44,17 @@ export async function login(page: Page, email: string, password: string = QA_PAS
   await expect(page.getByPlaceholder(COPY.emailPlaceholder)).toHaveCount(0, { timeout: 15_000 });
 }
 
+// Slice 4 role-based navigation: there is no Settings tab any more.
+//   - Child: the Me tab holds Settings, including Sign out.
+//   - Adult / admin / owner: Family → Settings (a pushed screen).
 export async function logout(page: Page): Promise<void> {
-  await page.getByText('Settings', { exact: true }).click();
+  const meTab = page.getByText('Me', { exact: true });
+  if (await meTab.count() > 0) {
+    await meTab.first().click();
+  } else {
+    await page.getByText('Family', { exact: true }).first().click();
+    await page.getByRole('button', { name: 'Settings' }).click();
+  }
   await page.getByText(COPY.signOut, { exact: true }).click();
   await expect(page.getByPlaceholder(COPY.emailPlaceholder)).toBeVisible({ timeout: 15_000 });
 }
