@@ -297,15 +297,10 @@ function mapRewardRedemptionRow(r: RewardRedemptionRow): RewardRedemption {
 // STORE
 // ============================================================
 
-export const useAppStore = create<AppStore>((rawSet) => {
-  const set: typeof rawSet = (...args) => {
-    console.trace(
-      '[zustand set]',
-      typeof args[0] === 'function' ? '(updater fn)' : args[0],
-    );
-    return rawSet(...(args as Parameters<typeof rawSet>));
-  };
-
+// No logging wrapper around `set`: store updates carry the Supabase session
+// (access + refresh token) and household data, and anything logged here
+// reaches logcat in release builds. See __tests__/noSecretLogging.test.ts.
+export const useAppStore = create<AppStore>((set) => {
   return {
   ...initialState,
 
